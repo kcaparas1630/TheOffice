@@ -38,7 +38,9 @@ ${bold("The Office — commands")}
   /redo <name> <critique>    "This sucks, redo it because X" — revise latest doc
   /email <name>              Email their latest document to the CEO (send-only)
   /supervisor <name> <boss>  Make <boss> the supervisor of <name>
-  /delegate <boss> <name> <task>  Boss hands a task to their report (child run)
+  /task <name> <task>        Assign a task; if they lead a team, THEY decide
+                             whether to keep it or delegate it down
+  /delegate <boss> <name> <task>  Force the routing yourself (child run)
   /fire <name>               Remove an agent and their records
   /help                      This help
   /quit                      Leave the office
@@ -338,6 +340,40 @@ async function main() {
                 console.log(`${cyan(result.supervisor)} now supervises ${cyan(result.agent)}.`);
               }
               break;
+            case "task": {
+              if (parsed.args.length < 2) {
+                console.log(yellow("Usage: /task <name> <task> — e.g. /task Hazel research Convex components"));
+                break;
+              }
+              const assignee = parsed.args[0];
+              const taskText = parsed.args.slice(1).join(" ");
+              process.stdout.write(dim(`${assignee} is looking at the task...`));
+              try {
+                const result = await convex.action(api.delegation.assignTask, {
+                  agentName: assignee,
+                  task: taskText,
+                });
+                process.stdout.write("\r\x1b[K");
+                if (result.delegated) {
+                  console.log(
+                    `${cyan(result.assignee)} handed it to ${cyan(result.executor)}` +
+                      (result.reason ? dim(` — ${result.reason}`) : "") +
+                      `\n${cyan(result.executor)} delivered, and ${cyan(result.assignee)} reported back: ${bold(result.title)}` +
+                      ` (emailed if configured).\nRead it: ${bold(`/read ${result.assignee}`)} — full report attached inside.\n`
+                  );
+                } else {
+                  console.log(
+                    `${cyan(result.executor)} kept it` +
+                      (result.reason ? dim(` — ${result.reason}`) : "") +
+                      ` and delivered ${bold(result.title)}. Read it: ${bold(`/read ${result.executor}`)}\n`
+                  );
+                }
+              } catch (error) {
+                process.stdout.write("\r\x1b[K");
+                console.log(red(error instanceof Error ? error.message : String(error)) + "\n");
+              }
+              break;
+            }
             case "delegate": {
               if (parsed.args.length < 3) {
                 console.log(

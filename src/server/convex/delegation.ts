@@ -1,15 +1,25 @@
-// Delegation (M4): a supervisor hands a task to one of their reports.
+// Delegation (M4+): tasks flow to agents; supervisors route them.
 // Inter-agent "communication" is structured records — a parent run on the
 // supervisor, a child run on the worker, and the worker's artifact. One level
 // max, enforced in startRun. Flavor prose is generated FROM these records,
 // never load-bearing.
 import { action, internalQuery } from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { generateText } from "ai";
-import type { Id } from "./_generated/dataModel";
+import { generateObject, generateText } from "ai";
+import type { Doc, Id } from "./_generated/dataModel";
 import { chatModel } from "../vercel/model";
-import { buildTaskPrompt, taskTitle } from "../vercel/tasks";
+import {
+  buildTaskPrompt,
+  taskTitle,
+  routingSchema,
+  buildRoutingPrompt,
+  resolveRouting,
+  buildHandoffPrompt,
+  handoffTitle,
+  type AssignedBy,
+} from "../vercel/tasks";
 import { normalizeAgentName } from "../../lib/agentName";
 
 export const delegationPair = internalQuery({
@@ -32,6 +42,82 @@ export const delegationPair = internalQuery({
   },
 });
 
+export const agentWithReports = internalQuery({
+  args: { agentName: v.string() },
+  handler: async (ctx, { agentName }) => {
+    const agents = await ctx.db.query("agents").collect();
+    const agent =
+      agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(agentName)) ?? null;
+    if (!agent) throw new Error(`Nobody named "${agentName}" works here.`);
+    const reports = agents.filter((a) => a.supervisorId === agent._id);
+    return { agent, reports };
+  },
+});
+
+function extractCost(providerMetadata: unknown): number | undefined {
+  const cost = (providerMetadata as { openrouter?: { usage?: { cost?: number } } } | undefined)
+    ?.openrouter?.usage?.cost;
+  return typeof cost === "number" ? cost : undefined;
+}
+
+// Shared execution: run the task as `agent`, produce the report artifact,
+// close the run. Returns the artifact for the caller to link further records.
+async function performTask(
+  ctx: ActionCtx,
+  args: {
+    agent: Doc<"agents">;
+    task: string;
+    assignedBy: AssignedBy;
+    parentRunId?: Id<"runs">;
+  }
+): Promise<{ artifactId: Id<"artifacts">; title: string; runId: Id<"runs">; contentMd: string }> {
+  const runId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
+    agentId: args.agent._id,
+    trigger: args.parentRunId ? "delegation" : "chat",
+    parentRunId: args.parentRunId,
+    task: args.task,
+  });
+  try {
+    const { system, prompt } = buildTaskPrompt({
+      worker: args.agent,
+      assignedBy: args.assignedBy,
+      task: args.task,
+    });
+    const result = await generateText({
+      model: chatModel(),
+      system,
+      prompt,
+      providerOptions: { openrouter: { usage: { include: true } } },
+    });
+
+    const dateIso = new Date().toISOString().slice(0, 10);
+    const title = taskTitle(args.task, dateIso);
+    const contentMd = `# ${title}\n\n${result.text.trim()}\n`;
+    const artifactId: Id<"artifacts"> = await ctx.runMutation(internal.pipeline.saveArtifact, {
+      agentId: args.agent._id,
+      runId,
+      kind: "report",
+      title,
+      contentMd,
+      version: 1,
+      sources: [],
+    });
+    await ctx.runMutation(internal.pipeline.finishRun, {
+      runId,
+      artifactId,
+      costUsd: extractCost(result.providerMetadata),
+    });
+    return { artifactId, title, runId, contentMd };
+  } catch (error) {
+    await ctx.runMutation(internal.pipeline.failRun, {
+      runId,
+      error: error instanceof Error ? error.message.slice(0, 500) : String(error),
+    });
+    throw error;
+  }
+}
+
+// Explicit delegation: the CEO forces the routing (/delegate <boss> <worker> <task>).
 export const delegate = action({
   args: {
     supervisorName: v.string(),
@@ -48,64 +134,175 @@ export const delegate = action({
       workerName: args.workerName,
     });
 
-    // Parent run: the supervisor is on the hook for the outcome.
     const parentRunId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
       agentId: supervisor._id,
       trigger: "chat",
       task: `Delegate to ${worker.name}: ${args.task.trim()}`,
     });
-    // Child run: the worker does the work.
-    const childRunId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
-      agentId: worker._id,
-      trigger: "delegation",
-      parentRunId,
-      task: args.task.trim(),
-    });
-
     try {
-      const { system, prompt } = buildTaskPrompt({
-        worker,
-        supervisorName: supervisor.name,
+      const { artifactId, title } = await performTask(ctx, {
+        agent: worker,
         task: args.task.trim(),
+        assignedBy: { role: "supervisor", name: supervisor.name },
+        parentRunId,
       });
-      const result = await generateText({
-        model: chatModel(),
-        system,
-        prompt,
-        providerOptions: { openrouter: { usage: { include: true } } },
-      });
-
-      const dateIso = new Date().toISOString().slice(0, 10);
-      const title = taskTitle(args.task, dateIso);
-      const artifactId: Id<"artifacts"> = await ctx.runMutation(internal.pipeline.saveArtifact, {
-        agentId: worker._id,
-        runId: childRunId,
-        kind: "report",
-        title,
-        contentMd: `# ${title}\n\n${result.text.trim()}\n`,
-        version: 1,
-        sources: [],
-      });
-
-      const costUsd = (
-        result.providerMetadata as { openrouter?: { usage?: { cost?: number } } } | undefined
-      )?.openrouter?.usage?.cost;
-      await ctx.runMutation(internal.pipeline.finishRun, {
-        runId: childRunId,
-        artifactId,
-        costUsd: typeof costUsd === "number" ? costUsd : undefined,
-      });
-      // The parent closes with the delivered artifact — the supervisor's record
-      // points at what their report produced.
       await ctx.runMutation(internal.pipeline.finishRun, { runId: parentRunId, artifactId });
-
       return { supervisor: supervisor.name, worker: worker.name, title };
     } catch (error) {
-      const message = error instanceof Error ? error.message.slice(0, 500) : String(error);
-      await ctx.runMutation(internal.pipeline.failRun, { runId: childRunId, error: message });
       await ctx.runMutation(internal.pipeline.failRun, {
         runId: parentRunId,
-        error: `Delegated task failed: ${message}`,
+        error: `Delegated task failed: ${
+          error instanceof Error ? error.message.slice(0, 400) : String(error)
+        }`,
+      });
+      throw error;
+    }
+  },
+});
+
+// Autonomous routing: the CEO assigns a task to an agent; if that agent leads
+// a team, THEY decide (in persona, against their reports' job descriptions)
+// whether to keep it or hand it down. The decision + reason become records.
+export const assignTask = action({
+  args: { agentName: v.string(), task: v.string() },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    assignee: string;
+    executor: string;
+    delegated: boolean;
+    reason?: string;
+    title: string;
+  }> => {
+    if (!args.task.trim()) throw new Error("Describe the task.");
+    const task = args.task.trim();
+    const { agent, reports } = await ctx.runQuery(internal.delegation.agentWithReports, {
+      agentName: args.agentName,
+    });
+
+    // No team → they simply do the work.
+    if (reports.length === 0) {
+      const { title } = await performTask(ctx, {
+        agent,
+        task,
+        assignedBy: { role: "ceo" },
+      });
+      return { assignee: agent.name, executor: agent.name, delegated: false, title };
+    }
+
+    // They lead a team → routing decision, in persona.
+    const routingPrompt = buildRoutingPrompt({
+      supervisor: agent,
+      reports: reports.map((r) => ({
+        name: r.name,
+        jobTitle: r.jobTitle,
+        jobDescription: r.jobDescription,
+      })),
+      task,
+    });
+    const decision = await generateObject({
+      model: chatModel(),
+      schema: routingSchema,
+      system: routingPrompt.system,
+      prompt: routingPrompt.prompt,
+    });
+    const routing = resolveRouting(
+      decision.object,
+      reports.map((r) => r.name)
+    );
+
+    if (routing.kind === "self") {
+      const { title } = await performTask(ctx, {
+        agent,
+        task,
+        assignedBy: { role: "ceo" },
+      });
+      return {
+        assignee: agent.name,
+        executor: agent.name,
+        delegated: false,
+        reason: routing.reason,
+        title,
+      };
+    }
+
+    const worker = reports.find((r) => r.name === routing.workerName)!;
+    const workerTask = routing.task?.trim() || task;
+    const parentRunId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
+      agentId: agent._id,
+      trigger: "chat",
+      task: `Delegate to ${worker.name} — ${routing.reason}: ${workerTask}`,
+    });
+    try {
+      const workerResult = await performTask(ctx, {
+        agent: worker,
+        task: workerTask,
+        assignedBy: { role: "supervisor", name: agent.name },
+        parentRunId,
+      });
+
+      // The supervisor closes the loop: a covering brief to the CEO in their
+      // own voice, with the worker's report attached in full below it.
+      const handoff = buildHandoffPrompt({
+        supervisor: agent,
+        workerName: worker.name,
+        task,
+        reportMd: workerResult.contentMd,
+      });
+      const covering = await generateText({
+        model: chatModel(),
+        system: handoff.system,
+        prompt: handoff.prompt,
+        providerOptions: { openrouter: { usage: { include: true } } },
+      });
+      const dateIso = new Date().toISOString().slice(0, 10);
+      const reportTitle = handoffTitle(task, dateIso);
+      const handoffMd = [
+        `# ${reportTitle}`,
+        ``,
+        covering.text.trim(),
+        ``,
+        `---`,
+        ``,
+        workerResult.contentMd.trim(),
+      ].join("\n");
+      const handoffArtifactId: Id<"artifacts"> = await ctx.runMutation(
+        internal.pipeline.saveArtifact,
+        {
+          agentId: agent._id,
+          runId: parentRunId,
+          kind: "note",
+          title: reportTitle,
+          contentMd: handoffMd,
+          version: 1,
+          sources: [],
+        }
+      );
+      await ctx.runMutation(internal.pipeline.finishRun, {
+        runId: parentRunId,
+        artifactId: handoffArtifactId,
+        costUsd: extractCost(covering.providerMetadata),
+      });
+      // "She sends me the brief" — email the handoff to the CEO (best-effort;
+      // skips gracefully when email isn't configured).
+      await ctx.scheduler.runAfter(0, internal.email.sendArtifact, {
+        artifactId: handoffArtifactId,
+      });
+
+      return {
+        assignee: agent.name,
+        executor: worker.name,
+        delegated: true,
+        reason: routing.reason,
+        title: reportTitle,
+      };
+    } catch (error) {
+      await ctx.runMutation(internal.pipeline.failRun, {
+        runId: parentRunId,
+        error: `Delegated task failed: ${
+          error instanceof Error ? error.message.slice(0, 400) : String(error)
+        }`,
       });
       throw error;
     }

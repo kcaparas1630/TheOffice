@@ -53,9 +53,14 @@ you> /redo Edna too long, cut the fluff   # revision; the critique is distilled
 you> /email Edna                # email her latest document to the CEO now
                                 # (cron-scheduled briefs email automatically)
 
-you> /delegate Edna Milton write a primer on X   # Edna hands the task to her
-                                # report Milton: parent run on Edna, child run
-                                # on Milton, his report artifact closes both
+you> /task Edna write a report on X   # assign work to anyone; if they lead a
+                                # team, THEY decide (against their reports' job
+                                # descriptions) whether to keep it or delegate.
+                                # After a delegation, the supervisor reports
+                                # back with a covering brief (emailed if
+                                # configured) with the full report attached
+you> /delegate Edna Milton write a primer on X   # force the routing yourself:
+                                # parent run on Edna, child run on Milton
 ```
 
 Agents answer status questions **only from real task state** stored in Convex — an agent with no runs will tell you they haven't done anything yet, not invent progress.
