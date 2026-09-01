@@ -27,7 +27,7 @@ A curation of AI agents doing work. v1 is **headless**: everything is controlled
 - **Agents are data, not processes.** An agent is a row; it "comes alive" only when a cron or mention invokes a Convex function.
 - **A job description is a description, not a command.** Agents have `jobTitle`, prose `jobDescription`, and a `successfulDay` list. Personality (traits + notes) shapes tone, never facts.
 - **Status answers come from injected work state only** (runs/jobs/artifacts). Never let the LLM invent progress.
-- **Records drive prose, never the reverse.** Delegation (v4 milestone) is structured child runs, one level max.
+- **Records drive prose, never the reverse.** Delegation is structured child runs (`delegation.ts`), one level max — enforced in `startRun`.
 - **No inbound channels.** Send-only email later; agents never read inboxes.
 
 ## Commands
