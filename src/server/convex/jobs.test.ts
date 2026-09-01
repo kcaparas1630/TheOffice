@@ -90,6 +90,42 @@ describe("run lifecycle", () => {
     expect(state?.runs[0]).toMatchObject({ status: "failed", error: "feed timeout" });
   });
 
+  test("parallel runs: the agent stays working until the LAST run finishes", async () => {
+    const office = t();
+    const { agentId } = await office.mutation(api.agents.hire, hazel);
+    const runA = await office.mutation(internal.pipeline.startRun, {
+      agentId,
+      trigger: "chat",
+      task: "task A",
+    });
+    const runB = await office.mutation(internal.pipeline.startRun, {
+      agentId,
+      trigger: "chat",
+      task: "task B",
+    });
+
+    let state = await office.query(api.work.statusForAgent, { agentId });
+    expect(state?.status).toBe("working");
+    expect(state?.runs.filter((r) => r.status === "running")).toHaveLength(2);
+
+    await office.mutation(internal.pipeline.failRun, { runId: runA, error: "x" });
+    state = await office.query(api.work.statusForAgent, { agentId });
+    expect(state?.status).toBe("working"); // runB still going
+
+    const artifactId = await office.mutation(internal.pipeline.saveArtifact, {
+      agentId,
+      runId: runB,
+      kind: "note",
+      title: "B",
+      contentMd: "b",
+      version: 1,
+      sources: [],
+    });
+    await office.mutation(internal.pipeline.finishRun, { runId: runB, artifactId });
+    state = await office.query(api.work.statusForAgent, { agentId });
+    expect(state?.status).toBe("idle");
+  });
+
   test("finishRun links the artifact and the docs become readable", async () => {
     const office = t();
     const { agentId } = await office.mutation(api.agents.hire, hazel);

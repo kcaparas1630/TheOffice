@@ -1,7 +1,14 @@
 // The brief pipeline: deterministic feed fetch → one generateObject call →
 // artifact + run records. Orchestration lives here as task records, never
 // inside an SDK loop.
-import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+} from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { generateObject, generateText } from "ai";
@@ -98,6 +105,20 @@ export const startRun = internalMutation({
   },
 });
 
+// An agent goes idle only when NONE of their runs are still going — with
+// parallel runs, the first one to finish must not flip the agent to idle.
+async function settleAgentStatus(
+  ctx: { db: MutationCtx["db"] },
+  agentId: Id<"agents">
+): Promise<void> {
+  const running = await ctx.db
+    .query("runs")
+    .withIndex("by_agent", (q) => q.eq("agentId", agentId))
+    .filter((q) => q.eq(q.field("status"), "running"))
+    .first();
+  if (!running) await ctx.db.patch(agentId, { status: "idle" });
+}
+
 export const finishRun = internalMutation({
   args: {
     runId: v.id("runs"),
@@ -108,7 +129,7 @@ export const finishRun = internalMutation({
     const run = await ctx.db.get(runId);
     if (!run) return;
     await ctx.db.patch(runId, { status: "done", finishedAt: Date.now(), artifactId, costUsd });
-    await ctx.db.patch(run.agentId, { status: "idle" });
+    await settleAgentStatus(ctx, run.agentId);
   },
 });
 
@@ -119,7 +140,7 @@ export const failRun = internalMutation({
     if (!run) return;
     // No silent losses: the failure is on the record the agent reports from.
     await ctx.db.patch(runId, { status: "failed", finishedAt: Date.now(), error });
-    await ctx.db.patch(run.agentId, { status: "idle" });
+    await settleAgentStatus(ctx, run.agentId);
   },
 });
 
@@ -263,6 +284,36 @@ export const runJobNow = action({
       throw new Error(`${agent.name} has no ${jobTitle ? `job titled "${jobTitle}"` : "active job"}. Use /assign.`);
     }
     return await ctx.runAction(internal.pipeline.executeJob, { jobId: jobIds[0], trigger: "chat" });
+  },
+});
+
+// CLI `/run <name> &` — kick the job off in the background and return
+// immediately; progress is visible via /roster and /status.
+export const dispatchJobNow = mutation({
+  args: { agentName: v.string(), jobTitle: v.optional(v.string()) },
+  handler: async (ctx, { agentName, jobTitle }) => {
+    const agents = await ctx.db.query("agents").collect();
+    const agent = agents.find(
+      (a) => normalizeAgentName(a.name) === normalizeAgentName(agentName)
+    );
+    if (!agent) throw new Error(`Nobody named "${agentName}" works here.`);
+    const jobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_agent", (q) => q.eq("agentId", agent._id))
+      .collect();
+    const job = jobs.find(
+      (j) => j.active && (!jobTitle || j.title.toLowerCase() === jobTitle.toLowerCase())
+    );
+    if (!job) {
+      throw new Error(
+        `${agent.name} has no ${jobTitle ? `job titled "${jobTitle}"` : "active job"}. Use /assign.`
+      );
+    }
+    await ctx.scheduler.runAfter(0, internal.pipeline.executeJob, {
+      jobId: job._id,
+      trigger: "chat",
+    });
+    return { agent: agent.name, title: job.title };
   },
 });
 

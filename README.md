@@ -61,6 +61,10 @@ you> /task Edna write a report on X   # assign work to anyone; if they lead a
                                 # configured) with the full report attached
 you> /delegate Edna Milton write a primer on X   # force the routing yourself:
                                 # parent run on Edna, child run on Milton
+
+you> /task Edna research X &    # append & to /task or /run to dispatch in the
+you> /run Edna &                # background — agents work in parallel; watch
+                                # /roster, results land in /docs and email
 ```
 
 Agents answer status questions **only from real task state** stored in Convex — an agent with no runs will tell you they haven't done anything yet, not invent progress.

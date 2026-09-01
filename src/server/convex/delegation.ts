@@ -3,7 +3,7 @@
 // supervisor, a child run on the worker, and the worker's artifact. One level
 // max, enforced in startRun. Flavor prose is generated FROM these records,
 // never load-bearing.
-import { action, internalQuery } from "./_generated/server";
+import { action, internalAction, internalQuery, mutation } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
@@ -163,18 +163,18 @@ export const delegate = action({
 // Autonomous routing: the CEO assigns a task to an agent; if that agent leads
 // a team, THEY decide (in persona, against their reports' job descriptions)
 // whether to keep it or hand it down. The decision + reason become records.
-export const assignTask = action({
-  args: { agentName: v.string(), task: v.string() },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    assignee: string;
-    executor: string;
-    delegated: boolean;
-    reason?: string;
-    title: string;
-  }> => {
+interface AssignOutcome {
+  assignee: string;
+  executor: string;
+  delegated: boolean;
+  reason?: string;
+  title: string;
+}
+
+async function runAssignTask(
+  ctx: ActionCtx,
+  args: { agentName: string; task: string }
+): Promise<AssignOutcome> {
     if (!args.task.trim()) throw new Error("Describe the task.");
     const task = args.task.trim();
     const { agent, reports } = await ctx.runQuery(internal.delegation.agentWithReports, {
@@ -306,5 +306,34 @@ export const assignTask = action({
       });
       throw error;
     }
+}
+
+export const assignTask = action({
+  args: { agentName: v.string(), task: v.string() },
+  handler: (ctx, args): Promise<AssignOutcome> => runAssignTask(ctx, args),
+});
+
+// Background variant for dispatch — same behavior, fired by the scheduler.
+export const assignTaskBg = internalAction({
+  args: { agentName: v.string(), task: v.string() },
+  handler: async (ctx, args) => {
+    await runAssignTask(ctx, args);
+  },
+});
+
+// CLI `/task <name> <task> &` — validate cheaply, schedule, return at once.
+// Progress shows up in /roster and /status; results in /docs and email.
+export const dispatchTask = mutation({
+  args: { agentName: v.string(), task: v.string() },
+  handler: async (ctx, { agentName, task }) => {
+    if (!task.trim()) throw new Error("Describe the task.");
+    const agents = await ctx.db.query("agents").collect();
+    const agent = agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(agentName));
+    if (!agent) throw new Error(`Nobody named "${agentName}" works here.`);
+    await ctx.scheduler.runAfter(0, internal.delegation.assignTaskBg, {
+      agentName: agent.name,
+      task: task.trim(),
+    });
+    return { agent: agent.name };
   },
 });

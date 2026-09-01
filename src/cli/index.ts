@@ -41,6 +41,7 @@ ${bold("The Office — commands")}
   /task <name> <task>        Assign a task; if they lead a team, THEY decide
                              whether to keep it or delegate it down
   /delegate <boss> <name> <task>  Force the routing yourself (child run)
+  Append & to /task or /run to run in the background (watch with /roster)
   /fire <name>               Remove an agent and their records
   /help                      This help
   /quit                      Leave the office
@@ -175,7 +176,15 @@ async function showJobs(convex: ConvexHttpClient, name: string) {
   }
 }
 
-async function runJob(convex: ConvexHttpClient, name: string) {
+async function runJob(convex: ConvexHttpClient, name: string, background: boolean) {
+  if (background) {
+    const result = await convex.mutation(api.pipeline.dispatchJobNow, { agentName: name });
+    console.log(
+      `${cyan(result.agent)} started ${bold(result.title)} in the background.` +
+        ` Watch with ${bold("/roster")} or ${bold(`/status ${result.agent}`)}.\n`
+    );
+    return;
+  }
   process.stdout.write(dim(`${name} is working...`));
   try {
     const result = await convex.action(api.pipeline.runJobNow, { agentName: name });
@@ -294,8 +303,11 @@ async function main() {
               else await showJobs(convex, parsed.args[0]);
               break;
             case "run":
-              if (!parsed.args[0]) console.log(yellow("Usage: /run <name>"));
-              else await runJob(convex, parsed.args[0]);
+              if (!parsed.args[0]) console.log(yellow("Usage: /run <name> [&]"));
+              else {
+                const bg = parsed.args[parsed.args.length - 1] === "&";
+                await runJob(convex, parsed.args[0], bg);
+              }
               break;
             case "docs":
               if (!parsed.args[0]) console.log(yellow("Usage: /docs <name>"));
@@ -342,11 +354,24 @@ async function main() {
               break;
             case "task": {
               if (parsed.args.length < 2) {
-                console.log(yellow("Usage: /task <name> <task> — e.g. /task Hazel research Convex components"));
+                console.log(yellow("Usage: /task <name> <task> — append & to run in the background"));
                 break;
               }
-              const assignee = parsed.args[0];
-              const taskText = parsed.args.slice(1).join(" ");
+              const background = parsed.args[parsed.args.length - 1] === "&";
+              const taskArgs = background ? parsed.args.slice(0, -1) : parsed.args;
+              const assignee = taskArgs[0];
+              const taskText = taskArgs.slice(1).join(" ");
+              if (background) {
+                const result = await convex.mutation(api.delegation.dispatchTask, {
+                  agentName: assignee,
+                  task: taskText,
+                });
+                console.log(
+                  `${cyan(result.agent)} took the task and got to work in the background.` +
+                    ` Watch with ${bold("/roster")}; results land in ${bold(`/docs ${result.agent}`)} (and email).\n`
+                );
+                break;
+              }
               process.stdout.write(dim(`${assignee} is looking at the task...`));
               try {
                 const result = await convex.action(api.delegation.assignTask, {
