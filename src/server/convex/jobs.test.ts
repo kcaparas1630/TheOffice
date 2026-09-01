@@ -39,10 +39,36 @@ describe("jobs.assign", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs![0]).toMatchObject({
       title: "Daily Tech Brief",
-      schedule: "0 14 * * *", // default when none given
+      schedule: "0 15 * * *", // default when none given
       active: true,
       lessons: [],
+      feeds: null, // office defaults until tuned
     });
+  });
+
+  test("feeds: assign validates them, setFeeds replaces and resets", async () => {
+    const office = t();
+    await office.mutation(api.agents.hire, hazel);
+    await expect(
+      office.mutation(api.jobs.assign, {
+        ...briefJob,
+        feeds: [{ name: "Bad", url: "not-a-url" }],
+      })
+    ).rejects.toThrow(/not a valid URL/);
+
+    const { jobId } = await office.mutation(api.jobs.assign, briefJob);
+    const custom = [{ name: "The Verge AI", url: "https://www.theverge.com/rss/ai/index.xml" }];
+    await office.mutation(api.jobs.setFeeds, { jobId, feeds: custom });
+    let jobs = await office.query(api.jobs.listForAgent, { agentName: "Hazel" });
+    expect(jobs![0].feeds).toEqual(custom);
+
+    await expect(office.mutation(api.jobs.setFeeds, { jobId, feeds: [] })).rejects.toThrow(
+      /At least one/
+    );
+
+    await office.mutation(api.jobs.setFeeds, { jobId }); // omit = reset to defaults
+    jobs = await office.query(api.jobs.listForAgent, { agentName: "Hazel" });
+    expect(jobs![0].feeds).toBeNull();
   });
 
   test("rejects unknown agents and duplicate titles", async () => {

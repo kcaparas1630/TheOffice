@@ -28,6 +28,8 @@ export default defineSchema({
     schedule: v.string(), // cron expr, informational in v1
     spec: v.string(), // what "good" means — used in prompts AND critiques
     lessons: v.array(v.string()), // durable rules distilled from critiques
+    // Per-job source list; absent = office defaults (DEFAULT_FEEDS).
+    feeds: v.optional(v.array(v.object({ name: v.string(), url: v.string() }))),
     active: v.boolean(),
   }).index("by_agent", ["agentId"]),
 

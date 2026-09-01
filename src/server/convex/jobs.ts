@@ -1,8 +1,11 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { findAgentByName, requireAgentByName } from "./model/agents";
+import { validateFeeds } from "../../lib/feeds";
 
 const MAX_LESSONS = 20;
+
+const feedsValidator = v.array(v.object({ name: v.string(), url: v.string() }));
 
 export const assign = mutation({
   args: {
@@ -10,11 +13,16 @@ export const assign = mutation({
     title: v.string(),
     spec: v.string(),
     schedule: v.optional(v.string()), // informational in v1; the cron runs daily 15:00 UTC
+    feeds: v.optional(feedsValidator), // per-job sources; omit for office defaults
   },
   handler: async (ctx, args) => {
     const agent = await requireAgentByName(ctx, args.agentName);
     if (!args.title.trim()) throw new Error("Job title is required.");
     if (!args.spec.trim()) throw new Error("A spec (what 'good' means) is required.");
+    if (args.feeds) {
+      const feedError = validateFeeds(args.feeds);
+      if (feedError) throw new Error(feedError);
+    }
 
     const existing = await ctx.db
       .query("jobs")
@@ -28,8 +36,9 @@ export const assign = mutation({
       agentId: agent._id,
       title: args.title.trim(),
       spec: args.spec.trim(),
-      schedule: args.schedule?.trim() || "0 14 * * *",
+      schedule: args.schedule?.trim() || "0 15 * * *",
       lessons: [],
+      feeds: args.feeds,
       active: true,
     });
     return { jobId, agent: agent.name, title: args.title.trim() };
@@ -51,8 +60,24 @@ export const listForAgent = query({
       schedule: j.schedule,
       spec: j.spec,
       lessons: j.lessons,
+      feeds: j.feeds ?? null, // null = office defaults
       active: j.active,
     }));
+  },
+});
+
+// Replace a job's feed list; omit `feeds` to reset to the office defaults.
+export const setFeeds = mutation({
+  args: { jobId: v.id("jobs"), feeds: v.optional(feedsValidator) },
+  handler: async (ctx, { jobId, feeds }) => {
+    const job = await ctx.db.get(jobId);
+    if (!job) throw new Error("Job not found.");
+    if (feeds) {
+      const feedError = validateFeeds(feeds);
+      if (feedError) throw new Error(feedError);
+    }
+    await ctx.db.patch(jobId, { feeds });
+    return { title: job.title, feedCount: feeds?.length ?? null };
   },
 });
 

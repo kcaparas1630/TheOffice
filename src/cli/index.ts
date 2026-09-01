@@ -13,6 +13,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../server/convex/_generated/api";
 import { parseInput } from "./mentions";
 import { validateAgentName } from "../lib/agentName";
+import { DEFAULT_FEEDS, hostLabel } from "../lib/feeds";
 import { formatWorkState } from "../server/vercel/prompts";
 
 loadEnv({ path: ".env.local", quiet: true });
@@ -32,6 +33,7 @@ ${bold("The Office — commands")}
   /status <name>             Show an agent's real work state
   /assign <name>             Give an agent a standing job (interactive)
   /jobs <name>               List an agent's jobs and learned lessons
+  /feeds <name> [add|remove|reset]  Tune the sources behind their job's brief
   /run <name>                Run their job right now (don't wait for the cron)
   /docs <name>               List documents an agent has produced
   /read <name> [title]       Print a document (latest, or newest matching title)
@@ -172,7 +174,67 @@ async function showJobs(convex: ConvexHttpClient, name: string) {
   for (const job of jobs) {
     console.log(`  ${bold(job.title)} (${job.active ? "active" : "paused"}, cron ${job.schedule})`);
     console.log(dim(`    spec: ${job.spec}`));
+    const feeds = job.feeds ?? DEFAULT_FEEDS;
+    const suffix = job.feeds ? "" : " (office defaults)";
+    console.log(dim(`    feeds${suffix}: ${feeds.map((f) => f.name).join(", ")} + Hacker News`));
     for (const lesson of job.lessons) console.log(dim(`    lesson: ${lesson}`));
+  }
+}
+
+async function manageFeeds(convex: ConvexHttpClient, args: string[]) {
+  const [name, sub, ...rest] = args;
+  const jobs = await convex.query(api.jobs.listForAgent, { agentName: name });
+  if (jobs === null) {
+    console.log(yellow(`Nobody named "${name}" works here.`));
+    return;
+  }
+  const job = jobs.find((j) => j.active);
+  if (!job) {
+    console.log(dim(`${name} has no active job. Use /assign ${name} first.`));
+    return;
+  }
+  const current = job.feeds ?? null;
+
+  if (!sub || sub === "list") {
+    const feeds = current ?? DEFAULT_FEEDS;
+    console.log(`  ${bold(job.title)} feeds${current ? "" : dim(" (office defaults)")}:`);
+    feeds.forEach((f, i) => console.log(`    ${i + 1}. ${f.name} ${dim(f.url)}`));
+    console.log(dim(`    (+ Hacker News, always on)`));
+    console.log(dim(`  /feeds ${name} add <url> [label] | remove <n> | reset`));
+    return;
+  }
+
+  switch (sub) {
+    case "add": {
+      const url = rest[0];
+      if (!url) {
+        console.log(yellow(`Usage: /feeds ${name} add <url> [label]`));
+        return;
+      }
+      const label = rest.slice(1).join(" ") || hostLabel(url);
+      const feeds = [...(current ?? DEFAULT_FEEDS), { name: label, url }];
+      await convex.mutation(api.jobs.setFeeds, { jobId: job._id, feeds });
+      console.log(`Added ${bold(label)} to ${bold(job.title)} (${feeds.length} feeds).`);
+      break;
+    }
+    case "remove": {
+      const feeds = [...(current ?? DEFAULT_FEEDS)];
+      const index = Number.parseInt(rest[0] ?? "", 10) - 1;
+      if (Number.isNaN(index) || index < 0 || index >= feeds.length) {
+        console.log(yellow(`Usage: /feeds ${name} remove <1-${feeds.length}> (see /feeds ${name})`));
+        return;
+      }
+      const [removed] = feeds.splice(index, 1);
+      await convex.mutation(api.jobs.setFeeds, { jobId: job._id, feeds });
+      console.log(`Removed ${bold(removed.name)} from ${bold(job.title)}.`);
+      break;
+    }
+    case "reset":
+      await convex.mutation(api.jobs.setFeeds, { jobId: job._id });
+      console.log(`${bold(job.title)} is back on the office default feeds.`);
+      break;
+    default:
+      console.log(yellow(`Unknown subcommand "${sub}". Use add/remove/reset, or no subcommand to list.`));
   }
 }
 
@@ -301,6 +363,10 @@ async function main() {
             case "jobs":
               if (!parsed.args[0]) console.log(yellow("Usage: /jobs <name>"));
               else await showJobs(convex, parsed.args[0]);
+              break;
+            case "feeds":
+              if (!parsed.args[0]) console.log(yellow("Usage: /feeds <name> [add <url> [label] | remove <n> | reset]"));
+              else await manageFeeds(convex, parsed.args);
               break;
             case "run":
               if (!parsed.args[0]) console.log(yellow("Usage: /run <name> [&]"));

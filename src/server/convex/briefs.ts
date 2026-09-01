@@ -22,17 +22,14 @@ import {
   LESSON_PROMPT,
 } from "../vercel/brief";
 import { findAgentByName, requireAgentByName } from "./model/agents";
+import { DEFAULT_FEEDS, type FeedSource } from "../../lib/feeds";
 
-const RSS_FEEDS: { name: string; url: string }[] = [
-  { name: "Simon Willison", url: "https://simonwillison.net/atom/everything/" },
-  { name: "Latent Space", url: "https://www.latent.space/feed" },
-];
 const HN_MIN_POINTS = 30;
 const WINDOW_HOURS = 24;
 const FALLBACK_WINDOW_HOURS = 48;
 const MAX_CANDIDATES = 40;
 
-async function fetchCandidates(now: number): Promise<CandidateItem[]> {
+async function fetchCandidates(now: number, feeds: FeedSource[]): Promise<CandidateItem[]> {
   const sinceSec = Math.floor((now - FALLBACK_WINDOW_HOURS * 3_600_000) / 1000);
   const hnParams = new URLSearchParams({
     tags: "story",
@@ -43,7 +40,7 @@ async function fetchCandidates(now: number): Promise<CandidateItem[]> {
     fetch(`https://hn.algolia.com/api/v1/search_by_date?${hnParams}`)
       .then((r) => r.json())
       .then((json) => parseHnHits(json)),
-    ...RSS_FEEDS.map((feed) =>
+    ...feeds.map((feed) =>
       fetch(feed.url)
         .then((r) => r.text())
         .then((xml) => parseFeedXml(xml, feed.name))
@@ -123,7 +120,7 @@ export const executeJob = internalAction({
 
     try {
       const now = Date.now();
-      const candidates = await fetchCandidates(now);
+      const candidates = await fetchCandidates(now, job.feeds ?? DEFAULT_FEEDS);
       const dateIso = new Date(now).toISOString().slice(0, 10);
       const title = `${job.title} — ${dateIso}`;
 
