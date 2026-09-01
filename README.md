@@ -8,7 +8,7 @@ A curation of AI agents doing work. You are the CEO; you hire agents, give them 
 
 - [x] **M1 — Foundation**: agent model + personality, `/hire` wizard, `@Name` chat grounded in real work state, vitest suite
 - [x] **M2 — The job pipeline**: feeds (HN + RSS) → daily brief artifact, manual trigger + 14:00 UTC cron, revisions with lessons accretion
-- [ ] **M3 — Outbound email**: the agent emails the brief to the CEO (send-only)
+- [x] **M3 — Outbound email**: scheduled briefs are emailed to the CEO via Resend (send-only; inbound never)
 - [ ] **M4 — Delegation**: hire a second agent, first agent supervises, delegate simple tasks as structured child runs
 
 ## Setup
@@ -22,6 +22,12 @@ npx convex dev
 # 2. Give the office an LLM (in another terminal):
 npx convex env set OPENROUTER_API_KEY sk-or-...
 # optional: npx convex env set OPENROUTER_MODEL anthropic/claude-haiku-4.5
+
+# 3. (Optional) Email delivery of scheduled briefs — resend.com free tier:
+npx convex env set RESEND_API_KEY re_...
+npx convex env set OFFICE_CEO_EMAIL you@example.com
+# optional custom sender (needs a verified domain on Resend):
+# npx convex env set OFFICE_EMAIL_FROM "Edna <edna@yourdomain.com>"
 
 # 3. Open the office:
 npm run office
@@ -44,6 +50,8 @@ you> /docs Edna                 # documents she has produced
 you> /read Edna                 # print the latest one
 you> /redo Edna too long, cut the fluff   # revision; the critique is distilled
                                           # into a durable lesson for future runs
+you> /email Edna                # email her latest document to the CEO now
+                                # (cron-scheduled briefs email automatically)
 ```
 
 Agents answer status questions **only from real task state** stored in Convex — an agent with no runs will tell you they haven't done anything yet, not invent progress.

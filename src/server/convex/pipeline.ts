@@ -221,6 +221,11 @@ export const executeJob = internalAction({
         sources,
       });
       await ctx.runMutation(internal.pipeline.finishRun, { runId, artifactId, costUsd });
+      if (trigger === "schedule") {
+        // Cron runs happen while nobody's at the terminal — deliver by email.
+        // Best-effort: a mail failure never fails the run.
+        await ctx.scheduler.runAfter(0, internal.email.sendArtifact, { artifactId });
+      }
       return { title, items: brief.items.length, slowDay: brief.slowDay };
     } catch (error) {
       await ctx.runMutation(internal.pipeline.failRun, {

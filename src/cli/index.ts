@@ -36,6 +36,7 @@ ${bold("The Office — commands")}
   /docs <name>               List documents an agent has produced
   /read <name> [title]       Print a document (latest, or newest matching title)
   /redo <name> <critique>    "This sucks, redo it because X" — revise latest doc
+  /email <name>              Email their latest document to the CEO (send-only)
   /supervisor <name> <boss>  Make <boss> the supervisor of <name>
   /fire <name>               Remove an agent and their records
   /help                      This help
@@ -308,6 +309,23 @@ async function main() {
                 await redo(convex, parsed.args[0], parsed.args.slice(1).join(" "));
               }
               break;
+            case "email": {
+              if (!parsed.args[0]) {
+                console.log(yellow("Usage: /email <name>"));
+                break;
+              }
+              process.stdout.write(dim("sending..."));
+              const result = await convex.action(api.email.emailLatest, {
+                agentName: parsed.args[0],
+              });
+              process.stdout.write("\r\x1b[K");
+              if (result.sent) {
+                console.log(`Sent ${bold(result.subject)} to ${cyan(result.to)}.`);
+              } else {
+                console.log(yellow(result.reason));
+              }
+              break;
+            }
             case "supervisor":
               if (parsed.args.length < 2) {
                 console.log(yellow("Usage: /supervisor <agent> <boss>"));
