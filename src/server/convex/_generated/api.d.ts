@@ -11,6 +11,7 @@
 import type * as agents from "../agents.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
+import type * as delegation from "../delegation.js";
 import type * as email from "../email.js";
 import type * as jobs from "../jobs.js";
 import type * as pipeline from "../pipeline.js";
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   chat: typeof chat;
   crons: typeof crons;
+  delegation: typeof delegation;
   email: typeof email;
   jobs: typeof jobs;
   pipeline: typeof pipeline;

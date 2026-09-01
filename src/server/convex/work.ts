@@ -44,6 +44,7 @@ async function collectState(ctx: QueryCtx, agentId: Id<"agents">): Promise<WorkS
       startedAt: r.startedAt,
       finishedAt: r.finishedAt,
       error: r.error,
+      task: r.task,
     })),
     artifacts: artifacts.map((a) => ({
       title: a.title,

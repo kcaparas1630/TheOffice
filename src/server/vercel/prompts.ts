@@ -24,6 +24,7 @@ export interface WorkState {
     startedAt: number;
     finishedAt?: number;
     error?: string;
+    task?: string;
   }[];
   artifacts: { title: string; kind: string; version: number; createdAt: number }[];
 }
@@ -82,8 +83,9 @@ export function formatWorkState(state: WorkState): string {
     for (const run of state.runs) {
       const finished = run.finishedAt ? `, finished ${fmtTime(run.finishedAt)}` : "";
       const error = run.error ? `, error: ${run.error}` : "";
+      const task = run.task ? `, task: "${run.task}"` : "";
       lines.push(
-        `- [${run.status}] trigger=${run.trigger}, started ${fmtTime(run.startedAt)}${finished}${error}`
+        `- [${run.status}] trigger=${run.trigger}, started ${fmtTime(run.startedAt)}${finished}${task}${error}`
       );
     }
   }

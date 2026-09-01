@@ -38,6 +38,7 @@ ${bold("The Office — commands")}
   /redo <name> <critique>    "This sucks, redo it because X" — revise latest doc
   /email <name>              Email their latest document to the CEO (send-only)
   /supervisor <name> <boss>  Make <boss> the supervisor of <name>
+  /delegate <boss> <name> <task>  Boss hands a task to their report (child run)
   /fire <name>               Remove an agent and their records
   /help                      This help
   /quit                      Leave the office
@@ -337,6 +338,33 @@ async function main() {
                 console.log(`${cyan(result.supervisor)} now supervises ${cyan(result.agent)}.`);
               }
               break;
+            case "delegate": {
+              if (parsed.args.length < 3) {
+                console.log(
+                  yellow("Usage: /delegate <boss> <name> <task> — e.g. /delegate Hazel Milton research Convex components")
+                );
+                break;
+              }
+              const [boss, worker] = parsed.args;
+              const task = parsed.args.slice(2).join(" ");
+              process.stdout.write(dim(`${boss} briefs ${worker}; ${worker} is working...`));
+              try {
+                const result = await convex.action(api.delegation.delegate, {
+                  supervisorName: boss,
+                  workerName: worker,
+                  task,
+                });
+                process.stdout.write("\r\x1b[K");
+                console.log(
+                  `${cyan(result.worker)} delivered ${bold(result.title)} for ${cyan(result.supervisor)}.` +
+                    ` Read it: ${bold(`/read ${result.worker}`)}\n`
+                );
+              } catch (error) {
+                process.stdout.write("\r\x1b[K");
+                console.log(red(error instanceof Error ? error.message : String(error)) + "\n");
+              }
+              break;
+            }
             case "fire": {
               if (!parsed.args[0]) {
                 console.log(yellow("Usage: /fire <name>"));

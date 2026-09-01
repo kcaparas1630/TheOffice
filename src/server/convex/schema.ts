@@ -35,8 +35,9 @@ export default defineSchema({
   runs: defineTable({
     jobId: v.optional(v.id("jobs")),
     agentId: v.id("agents"),
-    parentRunId: v.optional(v.id("runs")), // delegation = child run
+    parentRunId: v.optional(v.id("runs")), // delegation = child run, one level max
     trigger: v.union(v.literal("schedule"), v.literal("chat"), v.literal("delegation")),
+    task: v.optional(v.string()), // what was asked, recorded on the run itself
     status: v.union(
       v.literal("queued"),
       v.literal("running"),

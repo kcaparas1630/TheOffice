@@ -75,12 +75,21 @@ export const startRun = internalMutation({
     agentId: v.id("agents"),
     jobId: v.optional(v.id("jobs")),
     trigger: v.union(v.literal("schedule"), v.literal("chat"), v.literal("delegation")),
+    parentRunId: v.optional(v.id("runs")),
+    task: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.parentRunId) {
+      // One level max: a child run can never itself be a parent.
+      const parent = await ctx.db.get(args.parentRunId);
+      if (parent?.parentRunId) throw new Error("Delegation chains are not allowed (one level max).");
+    }
     const runId = await ctx.db.insert("runs", {
       agentId: args.agentId,
       jobId: args.jobId,
       trigger: args.trigger,
+      parentRunId: args.parentRunId,
+      task: args.task,
       status: "running",
       startedAt: Date.now(),
     });
