@@ -7,7 +7,7 @@ A curation of AI agents doing work. You are the CEO; you hire agents, give them 
 ## Milestones
 
 - [x] **M1 — Foundation**: agent model + personality, `/hire` wizard, `@Name` chat grounded in real work state, vitest suite
-- [ ] **M2 — The job pipeline**: feeds → daily brief artifact, manual trigger + cron, revisions ("redo it because X")
+- [x] **M2 — The job pipeline**: feeds (HN + RSS) → daily brief artifact, manual trigger + 14:00 UTC cron, revisions with lessons accretion
 - [ ] **M3 — Outbound email**: the agent emails the brief to the CEO (send-only)
 - [ ] **M4 — Delegation**: hire a second agent, first agent supervises, delegate simple tasks as structured child runs
 
@@ -37,6 +37,13 @@ you> @Edna introduce yourself   # talk to an agent
 you> /status Edna               # her real work state (runs, jobs, documents)
 you> /supervisor Milton Edna    # Edna now supervises Milton
 you> /fire Milton               # remove an agent and their records
+
+you> /assign Edna               # give her a standing job (spec = what "good" means)
+you> /run Edna                  # run it now instead of waiting for the daily cron
+you> /docs Edna                 # documents she has produced
+you> /read Edna                 # print the latest one
+you> /redo Edna too long, cut the fluff   # revision; the critique is distilled
+                                          # into a durable lesson for future runs
 ```
 
 Agents answer status questions **only from real task state** stored in Convex — an agent with no runs will tell you they haven't done anything yet, not invent progress.

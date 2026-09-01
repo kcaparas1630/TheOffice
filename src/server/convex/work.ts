@@ -3,6 +3,7 @@ import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { WorkState } from "../vercel/prompts";
+import { normalizeAgentName } from "../../lib/agentName";
 
 const RECENT_RUNS = 10;
 const RECENT_ARTIFACTS = 5;
@@ -63,4 +64,58 @@ export const statusForAgent = query({
 export const stateForAgent = internalQuery({
   args: { agentId: v.id("agents") },
   handler: async (ctx, { agentId }) => collectState(ctx, agentId),
+});
+
+async function agentByName(ctx: QueryCtx, name: string) {
+  const agents = await ctx.db.query("agents").collect();
+  return agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(name)) ?? null;
+}
+
+// CLI /docs — list an agent's documents, newest first.
+export const docsForAgent = query({
+  args: { agentName: v.string() },
+  handler: async (ctx, { agentName }) => {
+    const agent = await agentByName(ctx, agentName);
+    if (!agent) return null;
+    const artifacts = await ctx.db
+      .query("artifacts")
+      .withIndex("by_agent", (q) => q.eq("agentId", agent._id))
+      .order("desc")
+      .take(20);
+    return artifacts.map((a) => ({
+      title: a.title,
+      kind: a.kind,
+      version: a.version,
+      createdAt: a._creationTime,
+      sourceCount: a.sources.length,
+    }));
+  },
+});
+
+// CLI /read — full content of the newest document (or newest matching a title fragment).
+export const readDoc = query({
+  args: { agentName: v.string(), titleFragment: v.optional(v.string()) },
+  handler: async (ctx, { agentName, titleFragment }) => {
+    const agent = await agentByName(ctx, agentName);
+    if (!agent) return null;
+    const artifacts = await ctx.db
+      .query("artifacts")
+      .withIndex("by_agent", (q) => q.eq("agentId", agent._id))
+      .order("desc")
+      .take(50);
+    const match = titleFragment
+      ? artifacts.find((a) => a.title.toLowerCase().includes(titleFragment.toLowerCase()))
+      : artifacts[0];
+    if (!match) return { agentName: agent.name, doc: null };
+    return {
+      agentName: agent.name,
+      doc: {
+        title: match.title,
+        kind: match.kind,
+        version: match.version,
+        contentMd: match.contentMd,
+        sources: match.sources,
+      },
+    };
+  },
 });

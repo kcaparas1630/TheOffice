@@ -30,6 +30,12 @@ ${bold("The Office — commands")}
   /hire                      Hire a new agent (interactive)
   /roster                    List everyone in the office
   /status <name>             Show an agent's real work state
+  /assign <name>             Give an agent a standing job (interactive)
+  /jobs <name>               List an agent's jobs and learned lessons
+  /run <name>                Run their job right now (don't wait for the cron)
+  /docs <name>               List documents an agent has produced
+  /read <name> [title]       Print a document (latest, or newest matching title)
+  /redo <name> <critique>    "This sucks, redo it because X" — revise latest doc
   /supervisor <name> <boss>  Make <boss> the supervisor of <name>
   /fire <name>               Remove an agent and their records
   /help                      This help
@@ -130,6 +136,100 @@ async function showStatus(convex: ConvexHttpClient, name: string) {
   console.log(dim(formatWorkState(state).split("\n").slice(1).join("\n")) + "\n");
 }
 
+async function assignWizard(rl: Interface, convex: ConvexHttpClient, agentName: string) {
+  console.log(bold(`\nAssigning a standing job to ${agentName}.\n`));
+  const title = (await rl.question("Job title (e.g. Daily Tech Brief): ")).trim();
+  console.log(dim("The spec is what 'good' means — it drives both generation and critiques."));
+  const spec = (await rl.question("Spec: ")).trim();
+  const schedule = (await rl.question("Schedule (cron, empty = daily 14:00 UTC): ")).trim();
+  const result = await convex.mutation(api.jobs.assign, {
+    agentName,
+    title,
+    spec,
+    schedule: schedule || undefined,
+  });
+  console.log(
+    `\n${cyan(result.agent)} now owns ${bold(result.title)}.` +
+      ` Trigger it any time with ${bold(`/run ${result.agent}`)} — the cron runs daily at 14:00 UTC.\n`
+  );
+}
+
+async function showJobs(convex: ConvexHttpClient, name: string) {
+  const jobs = await convex.query(api.jobs.listForAgent, { agentName: name });
+  if (jobs === null) {
+    console.log(yellow(`Nobody named "${name}" works here.`));
+    return;
+  }
+  if (jobs.length === 0) {
+    console.log(dim(`${name} has no standing jobs. Use /assign ${name}.`));
+    return;
+  }
+  for (const job of jobs) {
+    console.log(`  ${bold(job.title)} (${job.active ? "active" : "paused"}, cron ${job.schedule})`);
+    console.log(dim(`    spec: ${job.spec}`));
+    for (const lesson of job.lessons) console.log(dim(`    lesson: ${lesson}`));
+  }
+}
+
+async function runJob(convex: ConvexHttpClient, name: string) {
+  process.stdout.write(dim(`${name} is working...`));
+  try {
+    const result = await convex.action(api.pipeline.runJobNow, { agentName: name });
+    process.stdout.write("\r\x1b[K");
+    console.log(
+      `${cyan(name)} finished ${bold(result.title)} — ${result.items} item(s)` +
+        `${result.slowDay ? dim(" (slow day)") : ""}. Read it: ${bold(`/read ${name}`)}\n`
+    );
+  } catch (error) {
+    process.stdout.write("\r\x1b[K");
+    console.log(red(error instanceof Error ? error.message : String(error)) + "\n");
+  }
+}
+
+async function showDocs(convex: ConvexHttpClient, name: string) {
+  const docs = await convex.query(api.work.docsForAgent, { agentName: name });
+  if (docs === null) {
+    console.log(yellow(`Nobody named "${name}" works here.`));
+    return;
+  }
+  if (docs.length === 0) {
+    console.log(dim(`${name} hasn't produced any documents yet.`));
+    return;
+  }
+  for (const doc of docs) {
+    const when = new Date(doc.createdAt).toISOString().slice(0, 16).replace("T", " ");
+    console.log(`  ${bold(doc.title)} ${dim(`(${doc.kind} v${doc.version}, ${when} UTC, ${doc.sourceCount} sources)`)}`);
+  }
+}
+
+async function readDoc(convex: ConvexHttpClient, name: string, titleFragment?: string) {
+  const result = await convex.query(api.work.readDoc, { agentName: name, titleFragment });
+  if (result === null) {
+    console.log(yellow(`Nobody named "${name}" works here.`));
+    return;
+  }
+  if (!result.doc) {
+    console.log(dim(`${result.agentName} has no matching documents.`));
+    return;
+  }
+  console.log(`\n${"─".repeat(60)}\n${result.doc.contentMd}\n${"─".repeat(60)}\n`);
+}
+
+async function redo(convex: ConvexHttpClient, name: string, critique: string) {
+  process.stdout.write(dim(`${name} is revising...`));
+  try {
+    const result = await convex.action(api.pipeline.revise, { agentName: name, critique });
+    process.stdout.write("\r\x1b[K");
+    console.log(
+      `${cyan(name)} produced ${bold(result.title)} (version ${result.version}).` +
+        ` Read it: ${bold(`/read ${name}`)}\n`
+    );
+  } catch (error) {
+    process.stdout.write("\r\x1b[K");
+    console.log(red(error instanceof Error ? error.message : String(error)) + "\n");
+  }
+}
+
 async function talkTo(convex: ConvexHttpClient, agentName: string, message: string) {
   process.stdout.write(dim(`${agentName} is thinking...`));
   try {
@@ -180,6 +280,33 @@ async function main() {
             case "status":
               if (!parsed.args[0]) console.log(yellow("Usage: /status <name>"));
               else await showStatus(convex, parsed.args[0]);
+              break;
+            case "assign":
+              if (!parsed.args[0]) console.log(yellow("Usage: /assign <name>"));
+              else await assignWizard(rl, convex, parsed.args[0]);
+              break;
+            case "jobs":
+              if (!parsed.args[0]) console.log(yellow("Usage: /jobs <name>"));
+              else await showJobs(convex, parsed.args[0]);
+              break;
+            case "run":
+              if (!parsed.args[0]) console.log(yellow("Usage: /run <name>"));
+              else await runJob(convex, parsed.args[0]);
+              break;
+            case "docs":
+              if (!parsed.args[0]) console.log(yellow("Usage: /docs <name>"));
+              else await showDocs(convex, parsed.args[0]);
+              break;
+            case "read":
+              if (!parsed.args[0]) console.log(yellow("Usage: /read <name> [title fragment]"));
+              else await readDoc(convex, parsed.args[0], parsed.args.slice(1).join(" ") || undefined);
+              break;
+            case "redo":
+              if (parsed.args.length < 2) {
+                console.log(yellow('Usage: /redo <name> <critique> — e.g. /redo Edna "too long, cut the fluff"'));
+              } else {
+                await redo(convex, parsed.args[0], parsed.args.slice(1).join(" "));
+              }
               break;
             case "supervisor":
               if (parsed.args.length < 2) {

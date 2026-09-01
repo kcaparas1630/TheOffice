@@ -10,6 +10,9 @@
 
 import type * as agents from "../agents.js";
 import type * as chat from "../chat.js";
+import type * as crons from "../crons.js";
+import type * as jobs from "../jobs.js";
+import type * as pipeline from "../pipeline.js";
 import type * as work from "../work.js";
 
 import type {
@@ -21,6 +24,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   chat: typeof chat;
+  crons: typeof crons;
+  jobs: typeof jobs;
+  pipeline: typeof pipeline;
   work: typeof work;
 }>;
 
