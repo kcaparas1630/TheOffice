@@ -10,3 +10,11 @@ export function chatModel() {
   });
   return openrouter.chat(process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL);
 }
+
+// OpenRouter reports the request's USD cost in provider metadata when usage
+// accounting is requested; runs.costUsd verifies "basically free" (spec §8).
+export function extractCostUsd(providerMetadata: unknown): number | undefined {
+  const cost = (providerMetadata as { openrouter?: { usage?: { cost?: number } } } | undefined)
+    ?.openrouter?.usage?.cost;
+  return typeof cost === "number" ? cost : undefined;
+}

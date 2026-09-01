@@ -1,6 +1,6 @@
 import { mutation, query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { normalizeAgentName } from "../../lib/agentName";
+import { findAgentByName, requireAgentByName } from "./model/agents";
 
 const MAX_LESSONS = 20;
 
@@ -9,12 +9,10 @@ export const assign = mutation({
     agentName: v.string(),
     title: v.string(),
     spec: v.string(),
-    schedule: v.optional(v.string()), // informational in v1; the cron runs daily 14:00 UTC
+    schedule: v.optional(v.string()), // informational in v1; the cron runs daily 15:00 UTC
   },
   handler: async (ctx, args) => {
-    const agents = await ctx.db.query("agents").collect();
-    const agent = agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(args.agentName));
-    if (!agent) throw new Error(`Agent "${args.agentName}" not found.`);
+    const agent = await requireAgentByName(ctx, args.agentName);
     if (!args.title.trim()) throw new Error("Job title is required.");
     if (!args.spec.trim()) throw new Error("A spec (what 'good' means) is required.");
 
@@ -41,8 +39,7 @@ export const assign = mutation({
 export const listForAgent = query({
   args: { agentName: v.string() },
   handler: async (ctx, { agentName }) => {
-    const agents = await ctx.db.query("agents").collect();
-    const agent = agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(agentName));
+    const agent = await findAgentByName(ctx, agentName);
     if (!agent) return null;
     const jobs = await ctx.db
       .query("jobs")

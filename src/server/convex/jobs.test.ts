@@ -4,11 +4,10 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
 
-// pipeline.ts is included for its internal run/artifact mutations (its LLM
-// calls only happen inside executeJob/revise handlers, which we don't invoke).
-// chat.ts stays excluded: it needs the installed agent component.
+// LLM-calling modules (briefs, delegation, chat) are excluded; runs.ts and
+// artifacts.ts are pure db plumbing and safe to exercise directly.
 const modules = {
-  ...import.meta.glob("./{agents,work,jobs,pipeline}.ts"),
+  ...import.meta.glob("./{agents,work,jobs,runs,artifacts}.ts"),
   ...import.meta.glob("./_generated/**/*.js"),
 };
 
@@ -48,7 +47,7 @@ describe("jobs.assign", () => {
 
   test("rejects unknown agents and duplicate titles", async () => {
     const office = t();
-    await expect(office.mutation(api.jobs.assign, briefJob)).rejects.toThrow(/not found/);
+    await expect(office.mutation(api.jobs.assign, briefJob)).rejects.toThrow(/works here/);
     await office.mutation(api.agents.hire, hazel);
     await office.mutation(api.jobs.assign, briefJob);
     await expect(
@@ -75,7 +74,7 @@ describe("run lifecycle", () => {
   test("startRun marks working; failRun records the error and frees the agent", async () => {
     const office = t();
     const { agentId } = await office.mutation(api.agents.hire, hazel);
-    const runId = await office.mutation(internal.pipeline.startRun, {
+    const runId = await office.mutation(internal.runs.startRun, {
       agentId,
       trigger: "schedule",
     });
@@ -84,7 +83,7 @@ describe("run lifecycle", () => {
     expect(state?.status).toBe("working");
     expect(state?.runs[0].status).toBe("running");
 
-    await office.mutation(internal.pipeline.failRun, { runId, error: "feed timeout" });
+    await office.mutation(internal.runs.failRun, { runId, error: "feed timeout" });
     state = await office.query(api.work.statusForAgent, { agentId });
     expect(state?.status).toBe("idle");
     expect(state?.runs[0]).toMatchObject({ status: "failed", error: "feed timeout" });
@@ -93,12 +92,12 @@ describe("run lifecycle", () => {
   test("parallel runs: the agent stays working until the LAST run finishes", async () => {
     const office = t();
     const { agentId } = await office.mutation(api.agents.hire, hazel);
-    const runA = await office.mutation(internal.pipeline.startRun, {
+    const runA = await office.mutation(internal.runs.startRun, {
       agentId,
       trigger: "chat",
       task: "task A",
     });
-    const runB = await office.mutation(internal.pipeline.startRun, {
+    const runB = await office.mutation(internal.runs.startRun, {
       agentId,
       trigger: "chat",
       task: "task B",
@@ -108,11 +107,11 @@ describe("run lifecycle", () => {
     expect(state?.status).toBe("working");
     expect(state?.runs.filter((r) => r.status === "running")).toHaveLength(2);
 
-    await office.mutation(internal.pipeline.failRun, { runId: runA, error: "x" });
+    await office.mutation(internal.runs.failRun, { runId: runA, error: "x" });
     state = await office.query(api.work.statusForAgent, { agentId });
     expect(state?.status).toBe("working"); // runB still going
 
-    const artifactId = await office.mutation(internal.pipeline.saveArtifact, {
+    const artifactId = await office.mutation(internal.runs.saveArtifact, {
       agentId,
       runId: runB,
       kind: "note",
@@ -121,7 +120,7 @@ describe("run lifecycle", () => {
       version: 1,
       sources: [],
     });
-    await office.mutation(internal.pipeline.finishRun, { runId: runB, artifactId });
+    await office.mutation(internal.runs.finishRun, { runId: runB, artifactId });
     state = await office.query(api.work.statusForAgent, { agentId });
     expect(state?.status).toBe("idle");
   });
@@ -129,11 +128,11 @@ describe("run lifecycle", () => {
   test("finishRun links the artifact and the docs become readable", async () => {
     const office = t();
     const { agentId } = await office.mutation(api.agents.hire, hazel);
-    const runId = await office.mutation(internal.pipeline.startRun, {
+    const runId = await office.mutation(internal.runs.startRun, {
       agentId,
       trigger: "chat",
     });
-    const artifactId = await office.mutation(internal.pipeline.saveArtifact, {
+    const artifactId = await office.mutation(internal.runs.saveArtifact, {
       agentId,
       runId,
       kind: "brief",
@@ -142,17 +141,17 @@ describe("run lifecycle", () => {
       version: 1,
       sources: [{ title: "HN", url: "https://news.ycombinator.com" }],
     });
-    await office.mutation(internal.pipeline.finishRun, { runId, artifactId, costUsd: 0 });
+    await office.mutation(internal.runs.finishRun, { runId, artifactId, costUsd: 0 });
 
     const state = await office.query(api.work.statusForAgent, { agentId });
     expect(state?.status).toBe("idle");
     expect(state?.runs[0].status).toBe("done");
 
-    const docs = await office.query(api.work.docsForAgent, { agentName: "Hazel" });
+    const docs = await office.query(api.artifacts.docsForAgent, { agentName: "Hazel" });
     expect(docs).toHaveLength(1);
     expect(docs![0]).toMatchObject({ title: "Daily Tech Brief — 2026-08-31", version: 1 });
 
-    const read = await office.query(api.work.readDoc, { agentName: "Hazel" });
+    const read = await office.query(api.artifacts.readDoc, { agentName: "Hazel" });
     expect(read?.doc?.contentMd).toContain("content");
   });
 });

@@ -8,7 +8,7 @@ import { api, internal } from "./_generated/api";
 // invoke here — we test the records: pair validation, parent/child runs,
 // the one-level rule, and how state surfaces the task.
 const modules = {
-  ...import.meta.glob("./{agents,work,jobs,pipeline,delegation}.ts"),
+  ...import.meta.glob("./{agents,work,jobs,runs,artifacts,delegation}.ts"),
   ...import.meta.glob("./_generated/**/*.js"),
 };
 
@@ -59,12 +59,12 @@ describe("delegation run records", () => {
       profile("Milton", "Researcher", "Hazel")
     );
 
-    const parentRunId = await office.mutation(internal.pipeline.startRun, {
+    const parentRunId = await office.mutation(internal.runs.startRun, {
       agentId: hazelId,
       trigger: "chat",
       task: "Delegate to Milton: research components",
     });
-    const childRunId = await office.mutation(internal.pipeline.startRun, {
+    const childRunId = await office.mutation(internal.runs.startRun, {
       agentId: miltonId,
       trigger: "delegation",
       parentRunId,
@@ -79,7 +79,7 @@ describe("delegation run records", () => {
       task: "research components",
     });
 
-    const artifactId = await office.mutation(internal.pipeline.saveArtifact, {
+    const artifactId = await office.mutation(internal.runs.saveArtifact, {
       agentId: miltonId,
       runId: childRunId,
       kind: "report",
@@ -88,31 +88,31 @@ describe("delegation run records", () => {
       version: 1,
       sources: [],
     });
-    await office.mutation(internal.pipeline.finishRun, { runId: childRunId, artifactId });
-    await office.mutation(internal.pipeline.finishRun, { runId: parentRunId, artifactId });
+    await office.mutation(internal.runs.finishRun, { runId: childRunId, artifactId });
+    await office.mutation(internal.runs.finishRun, { runId: parentRunId, artifactId });
 
     const hazelState = await office.query(api.work.statusForAgent, { agentId: hazelId });
     expect(hazelState?.status).toBe("idle");
     expect(hazelState?.runs[0]).toMatchObject({ status: "done", task: "Delegate to Milton: research components" });
 
-    const docs = await office.query(api.work.docsForAgent, { agentName: "Milton" });
+    const docs = await office.query(api.artifacts.docsForAgent, { agentName: "Milton" });
     expect(docs![0].title).toBe("Task: research components — 2026-09-02");
   });
 
   test("one level max: a child run cannot become a parent", async () => {
     const office = t();
     const { agentId } = await office.mutation(api.agents.hire, profile("Hazel", "CoS"));
-    const parent = await office.mutation(internal.pipeline.startRun, {
+    const parent = await office.mutation(internal.runs.startRun, {
       agentId,
       trigger: "chat",
     });
-    const child = await office.mutation(internal.pipeline.startRun, {
+    const child = await office.mutation(internal.runs.startRun, {
       agentId,
       trigger: "delegation",
       parentRunId: parent,
     });
     await expect(
-      office.mutation(internal.pipeline.startRun, {
+      office.mutation(internal.runs.startRun, {
         agentId,
         trigger: "delegation",
         parentRunId: child,

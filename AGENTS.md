@@ -16,8 +16,17 @@ A curation of AI agents doing work. v1 is **headless**: everything is controlled
 
 - `src/app/` — Next.js App Router (placeholder in v1)
 - `src/components/` — shared UI components (empty until v2)
-- `src/server/convex/` — the whole runtime: schema, agent CRUD, work state, chat action. Convex functions dir (see `convex.json`)
-- `src/server/vercel/` — AI SDK layer: model client (OpenRouter) + pure prompt builders
+- `src/server/convex/` — the runtime. Convex functions dir (see `convex.json`); each file is an API namespace:
+  - `schema.ts`, `convex.config.ts`, `crons.ts` — infrastructure
+  - `model/` — shared ctx helpers (agent lookup, run settling); NOT Convex functions, never in the API
+  - `agents.ts` / `jobs.ts` — CRUD for the cast and their standing jobs
+  - `runs.ts` — run + artifact lifecycle (internal); every unit of work goes through it
+  - `briefs.ts` — the brief pipeline: feeds → generateObject → artifact, cron entry, revisions
+  - `delegation.ts` — task routing (supervisor decides), delegation, report-backs
+  - `artifacts.ts` — reading documents (/docs, /read, email lookups)
+  - `work.ts` — work-state queries injected into chat
+  - `chat.ts` / `email.ts` — @mention conversations; send-only Resend delivery
+- `src/server/vercel/` — AI SDK layer: model client (OpenRouter) + pure prompt builders/parsers
 - `src/cli/` — the headless terminal control (REPL, @mention parsing)
 - `src/lib/` — pure helpers shared by CLI and server
 - `scripts/smoke.ts` — one-shot end-to-end check against the running local deployment

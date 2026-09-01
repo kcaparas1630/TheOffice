@@ -146,7 +146,7 @@ async function assignWizard(rl: Interface, convex: ConvexHttpClient, agentName: 
   const title = (await rl.question("Job title (e.g. Daily Tech Brief): ")).trim();
   console.log(dim("The spec is what 'good' means — it drives both generation and critiques."));
   const spec = (await rl.question("Spec: ")).trim();
-  const schedule = (await rl.question("Schedule (cron, empty = daily 14:00 UTC): ")).trim();
+  const schedule = (await rl.question("Schedule (cron, empty = daily 15:00 UTC): ")).trim();
   const result = await convex.mutation(api.jobs.assign, {
     agentName,
     title,
@@ -155,7 +155,7 @@ async function assignWizard(rl: Interface, convex: ConvexHttpClient, agentName: 
   });
   console.log(
     `\n${cyan(result.agent)} now owns ${bold(result.title)}.` +
-      ` Trigger it any time with ${bold(`/run ${result.agent}`)} — the cron runs daily at 14:00 UTC.\n`
+      ` Trigger it any time with ${bold(`/run ${result.agent}`)} — the cron runs daily at 15:00 UTC.\n`
   );
 }
 
@@ -178,7 +178,7 @@ async function showJobs(convex: ConvexHttpClient, name: string) {
 
 async function runJob(convex: ConvexHttpClient, name: string, background: boolean) {
   if (background) {
-    const result = await convex.mutation(api.pipeline.dispatchJobNow, { agentName: name });
+    const result = await convex.mutation(api.briefs.dispatchJobNow, { agentName: name });
     console.log(
       `${cyan(result.agent)} started ${bold(result.title)} in the background.` +
         ` Watch with ${bold("/roster")} or ${bold(`/status ${result.agent}`)}.\n`
@@ -187,7 +187,7 @@ async function runJob(convex: ConvexHttpClient, name: string, background: boolea
   }
   process.stdout.write(dim(`${name} is working...`));
   try {
-    const result = await convex.action(api.pipeline.runJobNow, { agentName: name });
+    const result = await convex.action(api.briefs.runJobNow, { agentName: name });
     process.stdout.write("\r\x1b[K");
     console.log(
       `${cyan(name)} finished ${bold(result.title)} — ${result.items} item(s)` +
@@ -200,7 +200,7 @@ async function runJob(convex: ConvexHttpClient, name: string, background: boolea
 }
 
 async function showDocs(convex: ConvexHttpClient, name: string) {
-  const docs = await convex.query(api.work.docsForAgent, { agentName: name });
+  const docs = await convex.query(api.artifacts.docsForAgent, { agentName: name });
   if (docs === null) {
     console.log(yellow(`Nobody named "${name}" works here.`));
     return;
@@ -216,7 +216,7 @@ async function showDocs(convex: ConvexHttpClient, name: string) {
 }
 
 async function readDoc(convex: ConvexHttpClient, name: string, titleFragment?: string) {
-  const result = await convex.query(api.work.readDoc, { agentName: name, titleFragment });
+  const result = await convex.query(api.artifacts.readDoc, { agentName: name, titleFragment });
   if (result === null) {
     console.log(yellow(`Nobody named "${name}" works here.`));
     return;
@@ -231,7 +231,7 @@ async function readDoc(convex: ConvexHttpClient, name: string, titleFragment?: s
 async function redo(convex: ConvexHttpClient, name: string, critique: string) {
   process.stdout.write(dim(`${name} is revising...`));
   try {
-    const result = await convex.action(api.pipeline.revise, { agentName: name, critique });
+    const result = await convex.action(api.briefs.revise, { agentName: name, critique });
     process.stdout.write("\r\x1b[K");
     console.log(
       `${cyan(name)} produced ${bold(result.title)} (version ${result.version}).` +

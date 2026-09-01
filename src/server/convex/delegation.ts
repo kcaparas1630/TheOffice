@@ -9,7 +9,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { generateObject, generateText } from "ai";
 import type { Doc, Id } from "./_generated/dataModel";
-import { chatModel } from "../vercel/model";
+import { chatModel, extractCostUsd } from "../vercel/model";
 import {
   buildTaskPrompt,
   taskTitle,
@@ -20,18 +20,13 @@ import {
   handoffTitle,
   type AssignedBy,
 } from "../vercel/tasks";
-import { normalizeAgentName } from "../../lib/agentName";
+import { requireAgentByName } from "./model/agents";
 
 export const delegationPair = internalQuery({
   args: { supervisorName: v.string(), workerName: v.string() },
   handler: async (ctx, args) => {
-    const agents = await ctx.db.query("agents").collect();
-    const find = (name: string) =>
-      agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(name)) ?? null;
-    const supervisor = find(args.supervisorName);
-    if (!supervisor) throw new Error(`Nobody named "${args.supervisorName}" works here.`);
-    const worker = find(args.workerName);
-    if (!worker) throw new Error(`Nobody named "${args.workerName}" works here.`);
+    const supervisor = await requireAgentByName(ctx, args.supervisorName);
+    const worker = await requireAgentByName(ctx, args.workerName);
     if (worker.supervisorId !== supervisor._id) {
       throw new Error(
         `${worker.name} does not report to ${supervisor.name}. ` +
@@ -45,20 +40,12 @@ export const delegationPair = internalQuery({
 export const agentWithReports = internalQuery({
   args: { agentName: v.string() },
   handler: async (ctx, { agentName }) => {
+    const agent = await requireAgentByName(ctx, agentName);
     const agents = await ctx.db.query("agents").collect();
-    const agent =
-      agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(agentName)) ?? null;
-    if (!agent) throw new Error(`Nobody named "${agentName}" works here.`);
     const reports = agents.filter((a) => a.supervisorId === agent._id);
     return { agent, reports };
   },
 });
-
-function extractCost(providerMetadata: unknown): number | undefined {
-  const cost = (providerMetadata as { openrouter?: { usage?: { cost?: number } } } | undefined)
-    ?.openrouter?.usage?.cost;
-  return typeof cost === "number" ? cost : undefined;
-}
 
 // Shared execution: run the task as `agent`, produce the report artifact,
 // close the run. Returns the artifact for the caller to link further records.
@@ -71,7 +58,7 @@ async function performTask(
     parentRunId?: Id<"runs">;
   }
 ): Promise<{ artifactId: Id<"artifacts">; title: string; runId: Id<"runs">; contentMd: string }> {
-  const runId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
+  const runId: Id<"runs"> = await ctx.runMutation(internal.runs.startRun, {
     agentId: args.agent._id,
     trigger: args.parentRunId ? "delegation" : "chat",
     parentRunId: args.parentRunId,
@@ -93,7 +80,7 @@ async function performTask(
     const dateIso = new Date().toISOString().slice(0, 10);
     const title = taskTitle(args.task, dateIso);
     const contentMd = `# ${title}\n\n${result.text.trim()}\n`;
-    const artifactId: Id<"artifacts"> = await ctx.runMutation(internal.pipeline.saveArtifact, {
+    const artifactId: Id<"artifacts"> = await ctx.runMutation(internal.runs.saveArtifact, {
       agentId: args.agent._id,
       runId,
       kind: "report",
@@ -102,14 +89,14 @@ async function performTask(
       version: 1,
       sources: [],
     });
-    await ctx.runMutation(internal.pipeline.finishRun, {
+    await ctx.runMutation(internal.runs.finishRun, {
       runId,
       artifactId,
-      costUsd: extractCost(result.providerMetadata),
+      costUsd: extractCostUsd(result.providerMetadata),
     });
     return { artifactId, title, runId, contentMd };
   } catch (error) {
-    await ctx.runMutation(internal.pipeline.failRun, {
+    await ctx.runMutation(internal.runs.failRun, {
       runId,
       error: error instanceof Error ? error.message.slice(0, 500) : String(error),
     });
@@ -134,7 +121,7 @@ export const delegate = action({
       workerName: args.workerName,
     });
 
-    const parentRunId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
+    const parentRunId: Id<"runs"> = await ctx.runMutation(internal.runs.startRun, {
       agentId: supervisor._id,
       trigger: "chat",
       task: `Delegate to ${worker.name}: ${args.task.trim()}`,
@@ -146,10 +133,10 @@ export const delegate = action({
         assignedBy: { role: "supervisor", name: supervisor.name },
         parentRunId,
       });
-      await ctx.runMutation(internal.pipeline.finishRun, { runId: parentRunId, artifactId });
+      await ctx.runMutation(internal.runs.finishRun, { runId: parentRunId, artifactId });
       return { supervisor: supervisor.name, worker: worker.name, title };
     } catch (error) {
-      await ctx.runMutation(internal.pipeline.failRun, {
+      await ctx.runMutation(internal.runs.failRun, {
         runId: parentRunId,
         error: `Delegated task failed: ${
           error instanceof Error ? error.message.slice(0, 400) : String(error)
@@ -229,7 +216,7 @@ async function runAssignTask(
 
     const worker = reports.find((r) => r.name === routing.workerName)!;
     const workerTask = routing.task?.trim() || task;
-    const parentRunId: Id<"runs"> = await ctx.runMutation(internal.pipeline.startRun, {
+    const parentRunId: Id<"runs"> = await ctx.runMutation(internal.runs.startRun, {
       agentId: agent._id,
       trigger: "chat",
       task: `Delegate to ${worker.name} — ${routing.reason}: ${workerTask}`,
@@ -268,7 +255,7 @@ async function runAssignTask(
         workerResult.contentMd.trim(),
       ].join("\n");
       const handoffArtifactId: Id<"artifacts"> = await ctx.runMutation(
-        internal.pipeline.saveArtifact,
+        internal.runs.saveArtifact,
         {
           agentId: agent._id,
           runId: parentRunId,
@@ -279,10 +266,10 @@ async function runAssignTask(
           sources: [],
         }
       );
-      await ctx.runMutation(internal.pipeline.finishRun, {
+      await ctx.runMutation(internal.runs.finishRun, {
         runId: parentRunId,
         artifactId: handoffArtifactId,
-        costUsd: extractCost(covering.providerMetadata),
+        costUsd: extractCostUsd(covering.providerMetadata),
       });
       // "She sends me the brief" — email the handoff to the CEO (best-effort;
       // skips gracefully when email isn't configured).
@@ -298,7 +285,7 @@ async function runAssignTask(
         title: reportTitle,
       };
     } catch (error) {
-      await ctx.runMutation(internal.pipeline.failRun, {
+      await ctx.runMutation(internal.runs.failRun, {
         runId: parentRunId,
         error: `Delegated task failed: ${
           error instanceof Error ? error.message.slice(0, 400) : String(error)
@@ -327,9 +314,7 @@ export const dispatchTask = mutation({
   args: { agentName: v.string(), task: v.string() },
   handler: async (ctx, { agentName, task }) => {
     if (!task.trim()) throw new Error("Describe the task.");
-    const agents = await ctx.db.query("agents").collect();
-    const agent = agents.find((a) => normalizeAgentName(a.name) === normalizeAgentName(agentName));
-    if (!agent) throw new Error(`Nobody named "${agentName}" works here.`);
+    const agent = await requireAgentByName(ctx, agentName);
     await ctx.scheduler.runAfter(0, internal.delegation.assignTaskBg, {
       agentName: agent.name,
       task: task.trim(),

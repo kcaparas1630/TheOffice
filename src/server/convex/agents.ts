@@ -1,15 +1,8 @@
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
-import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
-import { validateAgentName, normalizeAgentName } from "../../lib/agentName";
-
-async function findByName(ctx: QueryCtx, name: string): Promise<Doc<"agents"> | null> {
-  // Case-insensitive lookup; the cast is small, a scan is fine.
-  const all: Doc<"agents">[] = await ctx.db.query("agents").collect();
-  const target = normalizeAgentName(name);
-  return all.find((a) => normalizeAgentName(a.name) === target) ?? null;
-}
+import type { Id } from "./_generated/dataModel";
+import { validateAgentName } from "../../lib/agentName";
+import { findAgentByName as findByName } from "./model/agents";
 
 export const hire = mutation({
   args: {
