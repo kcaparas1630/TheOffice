@@ -1,0 +1,55 @@
+// The office viewer's single reactive snapshot: cast + live runs + recent
+// documents. The pixel office animates directly off these records (spec
+// principle #5) — nothing here is prose, and the client never invents state.
+import { query } from "./_generated/server";
+
+const RECENT_RUNS = 40;
+const RECENT_ARTIFACTS = 30;
+
+export const snapshot = query({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db.query("agents").collect();
+    const runs = await ctx.db.query("runs").order("desc").take(RECENT_RUNS);
+    const artifacts = await ctx.db.query("artifacts").order("desc").take(RECENT_ARTIFACTS);
+    const jobs = await ctx.db.query("jobs").collect();
+    const jobTitle = new Map(jobs.map((j) => [j._id, j.title]));
+    const agentName = new Map(agents.map((a) => [a._id, a.name]));
+
+    return {
+      agents: agents.map((a) => ({
+        _id: a._id,
+        name: a.name,
+        jobTitle: a.jobTitle,
+        status: a.status,
+        traits: a.personality.traits,
+        supervisorId: a.supervisorId ?? null,
+        sprite: a.sprite ?? null,
+        hiredAt: a._creationTime,
+      })),
+      runs: runs.map((r) => ({
+        _id: r._id,
+        agentId: r.agentId,
+        agentName: agentName.get(r.agentId) ?? "?",
+        parentRunId: r.parentRunId ?? null,
+        trigger: r.trigger,
+        status: r.status,
+        label: r.task ?? (r.jobId ? jobTitle.get(r.jobId) : undefined) ?? "run",
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt ?? null,
+        artifactId: r.artifactId ?? null,
+        error: r.error ?? null,
+        costUsd: r.costUsd ?? null,
+      })),
+      artifacts: artifacts.map((a) => ({
+        _id: a._id,
+        agentId: a.agentId,
+        agentName: agentName.get(a.agentId) ?? "?",
+        kind: a.kind,
+        title: a.title,
+        version: a.version,
+        createdAt: a._creationTime,
+      })),
+    };
+  },
+});

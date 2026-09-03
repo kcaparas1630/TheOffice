@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { validateAgentName } from "../../lib/agentName";
 import { findAgentByName as findByName } from "./model/agents";
+import { isSpriteId, SPRITE_IDS } from "../../lib/office/sprites";
 
 export const hire = mutation({
   args: {
@@ -13,8 +14,12 @@ export const hire = mutation({
     traits: v.array(v.string()),
     notes: v.string(),
     supervisorName: v.optional(v.string()),
+    sprite: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.sprite && !isSpriteId(args.sprite)) {
+      throw new Error(`Unknown sprite "${args.sprite}". Choose one of: ${SPRITE_IDS.join(", ")}.`);
+    }
     const nameError = validateAgentName(args.name);
     if (nameError) throw new Error(nameError);
     if (!args.jobTitle.trim()) throw new Error("Job title is required.");
@@ -42,6 +47,7 @@ export const hire = mutation({
         notes: args.notes.trim(),
       },
       supervisorId,
+      sprite: args.sprite,
       status: "idle",
     });
     return { agentId, name: args.name.trim() };
@@ -86,6 +92,20 @@ export const assignSupervisor = mutation({
     }
     await ctx.db.patch(agent._id, { supervisorId: supervisor._id });
     return { agent: agent.name, supervisor: supervisor.name };
+  },
+});
+
+// Change an agent's look in the pixel office; omit `sprite` to go back to auto.
+export const setSprite = mutation({
+  args: { name: v.string(), sprite: v.optional(v.string()) },
+  handler: async (ctx, { name, sprite }) => {
+    const agent = await findByName(ctx, name);
+    if (!agent) throw new Error(`Nobody named "${name}" works here.`);
+    if (sprite && !isSpriteId(sprite)) {
+      throw new Error(`Unknown sprite "${sprite}". Choose one of: ${SPRITE_IDS.join(", ")}.`);
+    }
+    await ctx.db.patch(agent._id, { sprite });
+    return { name: agent.name, sprite: sprite ?? null };
   },
 });
 

@@ -40,6 +40,19 @@ describe("agents.hire", () => {
     expect(roster[0].traits).toEqual(["strict", "pessimistic"]);
   });
 
+  test("stores a chosen sprite and rejects unknown ones", async () => {
+    const office = t();
+    await expect(
+      office.mutation(api.agents.hire, { ...ednaProfile, sprite: "c99" })
+    ).rejects.toThrow(/Unknown sprite/);
+    await office.mutation(api.agents.hire, { ...ednaProfile, sprite: "c03" });
+    let edna = await office.query(api.agents.getByName, { name: "Edna" });
+    expect(edna?.sprite).toBe("c03");
+    await office.mutation(api.agents.setSprite, { name: "edna", sprite: "c04" });
+    edna = await office.query(api.agents.getByName, { name: "Edna" });
+    expect(edna?.sprite).toBe("c04");
+  });
+
   test("rejects duplicate names case-insensitively", async () => {
     const office = t();
     await office.mutation(api.agents.hire, ednaProfile);

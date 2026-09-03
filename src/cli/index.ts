@@ -13,6 +13,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../server/convex/_generated/api";
 import { parseInput } from "./mentions";
 import { validateAgentName } from "../lib/agentName";
+import { SPRITE_CATALOG, isSpriteId } from "../lib/office/sprites";
 import { DEFAULT_FEEDS, hostLabel } from "../lib/feeds";
 import { formatWorkState } from "../server/vercel/prompts";
 
@@ -44,6 +45,7 @@ ${bold("The Office — commands")}
                              whether to keep it or delegate it down
   /delegate <boss> <name> <task>  Force the routing yourself (child run)
   Append & to /task or /run to run in the background (watch with /roster)
+  /look <name> [sprite]      Change how they look in the pixel office
   /fire <name>               Remove an agent and their records
   /help                      This help
   /quit                      Leave the office
@@ -103,6 +105,18 @@ async function hireWizard(rl: Interface, convex: ConvexHttpClient) {
     if (answer) supervisorName = answer;
   }
 
+  const looks = SPRITE_CATALOG.map((s) => `${s.id} = ${s.label}`).join(", ");
+  let sprite: string | undefined;
+  for (;;) {
+    const answer = (await rl.question(`Look in the pixel office? (${looks}; empty = auto): `)).trim();
+    if (!answer) break;
+    if (isSpriteId(answer)) {
+      sprite = answer;
+      break;
+    }
+    console.log(yellow(`  Unknown look "${answer}".`));
+  }
+
   const hired = await convex.mutation(api.agents.hire, {
     name,
     jobTitle,
@@ -111,6 +125,7 @@ async function hireWizard(rl: Interface, convex: ConvexHttpClient) {
     traits,
     notes,
     supervisorName,
+    sprite,
   });
   console.log(
     `\n${cyan(hired.name)} joined the office as ${bold(jobTitle)}.` +
@@ -490,6 +505,17 @@ async function main() {
                 process.stdout.write("\r\x1b[K");
                 console.log(red(error instanceof Error ? error.message : String(error)) + "\n");
               }
+              break;
+            }
+            case "look": {
+              const [who, look] = parsed.args;
+              if (!who) {
+                const looks = SPRITE_CATALOG.map((s) => `${s.id} = ${s.label}`).join(", ");
+                console.log(yellow(`Usage: /look <name> [${looks}] (no look = auto)`));
+                break;
+              }
+              const result = await convex.mutation(api.agents.setSprite, { name: who, sprite: look });
+              console.log(dim(`${result.name} now wears ${result.sprite ?? "whatever the office picks"}.`));
               break;
             }
             case "fire": {

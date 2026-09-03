@@ -82,3 +82,44 @@ export const latestArtifactId = internalQuery({
     return artifact?._id ?? null;
   },
 });
+
+// Office viewer: one document with its revision lineage (v1 → v2 → ...).
+export const byId = query({
+  args: { artifactId: v.id("artifacts") },
+  handler: async (ctx, { artifactId }) => {
+    const artifact = await ctx.db.get(artifactId);
+    if (!artifact) return null;
+    const agent = await ctx.db.get(artifact.agentId);
+
+    // Walk up to the root, then collect every descendant version.
+    let root = artifact;
+    while (root.parentId) {
+      const parent = await ctx.db.get(root.parentId);
+      if (!parent) break;
+      root = parent;
+    }
+    const chain = [{ _id: root._id, title: root.title, version: root.version }];
+    let cursor = root;
+    for (;;) {
+      const next = await ctx.db
+        .query("artifacts")
+        .withIndex("by_parent", (q) => q.eq("parentId", cursor._id))
+        .first();
+      if (!next) break;
+      chain.push({ _id: next._id, title: next.title, version: next.version });
+      cursor = next;
+    }
+
+    return {
+      _id: artifact._id,
+      agentName: agent?.name ?? "?",
+      kind: artifact.kind,
+      title: artifact.title,
+      version: artifact.version,
+      contentMd: artifact.contentMd,
+      sources: artifact.sources,
+      createdAt: artifact._creationTime,
+      chain,
+    };
+  },
+});

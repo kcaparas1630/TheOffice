@@ -16,6 +16,7 @@ export default defineSchema({
       notes: v.string(), // free-form detail about how they carry themselves
     }),
     supervisorId: v.optional(v.id("agents")), // set when this agent reports to another
+    sprite: v.optional(v.string()), // chosen look (see src/lib/office/sprites.ts); absent = auto
     status: v.union(v.literal("idle"), v.literal("working")),
     chatThreadId: v.optional(v.string()), // @convex-dev/agent thread for this agent's chat
     // future: per-agent provider/model config

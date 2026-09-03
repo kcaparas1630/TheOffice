@@ -2,7 +2,7 @@
 
 A curation of AI agents doing work. You are the CEO; you hire agents, give them real job descriptions, shape their personalities, and talk to them in the terminal with `@Name`.
 
-**v1 is headless** — everything runs in the terminal. The pixel office (sprites, v2) renders on top of the same data later.
+**v1 is headless** — everything runs in the terminal. The **pixel office** (`npm run dev`) is a read-only viewer plus chat on top of the same data: agents walk between their desks and the break room, sit down when a run is in flight, and stand beside a report's desk while a delegation runs — all derived from the runs table, never from prose.
 
 ## Milestones
 
@@ -10,6 +10,7 @@ A curation of AI agents doing work. You are the CEO; you hire agents, give them 
 - [x] **M2 — The job pipeline**: feeds (HN + RSS) → daily brief artifact, manual trigger + 14:00 UTC cron, revisions with lessons accretion
 - [x] **M3 — Outbound email**: scheduled briefs are emailed to the CEO via Resend (send-only; inbound never)
 - [x] **M4 — Delegation**: supervisors hand tasks to their reports as structured child runs (one level max); the worker's report artifact closes both runs
+- [x] **v2 — The pixel office**: `[Office] | [Chat]` web app; sprites animate off run records, chat shares the terminal's threads, documents open in-pane
 
 ## Setup
 
@@ -30,7 +31,8 @@ npx convex env set OFFICE_CEO_EMAIL you@example.com
 # npx convex env set OFFICE_EMAIL_FROM "Edna <edna@yourdomain.com>"
 
 # 3. Open the office:
-npm run office
+npm run office        # terminal
+npm run dev           # pixel office at http://localhost:3000
 ```
 
 ## Using the office
@@ -42,6 +44,7 @@ you> /roster                    # who works here
 you> @Edna introduce yourself   # talk to an agent
 you> /status Edna               # her real work state (runs, jobs, documents)
 you> /supervisor Milton Edna    # Edna now supervises Milton
+you> /look Hazel c04            # pick their sprite for the pixel office (empty = auto)
 you> /fire Milton               # remove an agent and their records
 
 you> /assign Edna               # give her a standing job (spec = what "good" means)
@@ -68,6 +71,14 @@ you> /run Edna &                # background — agents work in parallel; watch
 ```
 
 Agents answer status questions **only from real task state** stored in Convex — an agent with no runs will tell you they haven't done anything yet, not invent progress.
+
+## The pixel office (web)
+
+`npm run dev` with `npx convex dev` running. Left pane: the office. The team lead sits in the private office, everyone else takes a desk in hire order; people wander when idle, sit at their desk while a run is in flight, and a supervisor walks over and stands beside a report's desk while a delegated child run is running. Labels and "done/failed" bubbles come straight from the runs table. Under the scene, **Activity** lists recent runs with links to what they produced.
+
+The hamburger menu (top-left) has **Hire a new employee**: the same profile the terminal wizard asks for, plus a look picked from the sprite catalogue. Right pane: chat with the selected agent (click a sprite or their name), same threads as the terminal; the **look:** control under their name changes their sprite. The composer takes `@Name …`, a plain message to the selected agent, and the work commands `/task`, `/run`, `/redo`, `/email` (job setup, feeds and firing stay in the terminal). **Docs** lists every document in the office; open one to read it with its version chain and sources.
+
+Sprites live in `public/office/sprites/<set>_<front|back|right>.png` (left views are mirrored) and are listed in `src/lib/office/sprites.ts` — add a set there to make it hireable; walking is faked from single frames by lifting and striding the leg halves. Positions and corridors are hand-placed in `src/lib/office/layout.ts`.
 
 ## Development
 

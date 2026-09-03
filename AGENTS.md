@@ -10,12 +10,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # The Office
 
-A curation of AI agents doing work. v1 is **headless**: everything is controlled from the terminal (`npm run office`); the Next.js app is a placeholder until the pixel-office viewer (v2).
+A curation of AI agents doing work. Two front-ends over one Convex runtime: the terminal (`npm run office`, full control incl. hiring) and the pixel office (`npm run dev`, viewer + chat + work commands).
 
 ## Layout
 
-- `src/app/` — Next.js App Router (placeholder in v1)
-- `src/components/` — shared UI components (empty until v2)
+- `src/app/` — Next.js App Router: `page.tsx` is the two-pane `[Office] | [Chat]` client page; `providers.tsx` wires `ConvexProvider`
+- `src/components/office/` — `OfficeCanvas.tsx` (canvas loop: integrates positions, draws), `sprites.ts` (image loading + leg-animated draw), `OfficeMenu.tsx` (hamburger), `HireDialog.tsx` (hire form with sprite picker), `ActivityStrip.tsx` (recent runs)
+- `src/components/chat/` — `ChatPane.tsx` (roster, thread, commands), `Composer.tsx` (@mention picker), `Docs.tsx` (document list + reader)
+- `src/lib/office/` — pure simulation: `layout.ts` (spots/corridors on the artwork), `sim.ts` (seating, behaviors from runs, routing, walk cycle), `sprites.ts` (the sprite catalogue; `agents.sprite` must be one of its ids) — vitest-covered, no DOM
+- `public/office/` — `office_empty.png` scene, `sprites/`, `props/`
 - `src/server/convex/` — the runtime. Convex functions dir (see `convex.json`); each file is an API namespace:
   - `schema.ts`, `convex.config.ts`, `crons.ts` — infrastructure
   - `model/` — shared ctx helpers (agent lookup, run settling); NOT Convex functions, never in the API
@@ -23,9 +26,10 @@ A curation of AI agents doing work. v1 is **headless**: everything is controlled
   - `runs.ts` — run + artifact lifecycle (internal); every unit of work goes through it
   - `briefs.ts` — the brief pipeline: feeds → generateObject → artifact, cron entry, revisions
   - `delegation.ts` — task routing (supervisor decides), delegation, report-backs
-  - `artifacts.ts` — reading documents (/docs, /read, email lookups)
+  - `artifacts.ts` — reading documents (/docs, /read, email lookups, web `byId` with version chain)
+  - `office.ts` — the web viewer's reactive snapshot (cast + recent runs + documents)
   - `work.ts` — work-state queries injected into chat
-  - `chat.ts` / `email.ts` — @mention conversations; send-only Resend delivery
+  - `chat.ts` / `email.ts` — @mention conversations (+ `messages` paginated query for the web); send-only Resend delivery
 - `src/server/vercel/` — AI SDK layer: model client (OpenRouter) + pure prompt builders/parsers
 - `src/cli/` — the headless terminal control (REPL, @mention parsing)
 - `src/lib/` — pure helpers shared by CLI and server
@@ -36,6 +40,7 @@ A curation of AI agents doing work. v1 is **headless**: everything is controlled
 - **Agents are data, not processes.** An agent is a row; it "comes alive" only when a cron or mention invokes a Convex function.
 - **A job description is a description, not a command.** Agents have `jobTitle`, prose `jobDescription`, and a `successfulDay` list. Personality (traits + notes) shapes tone, never facts.
 - **Status answers come from injected work state only** (runs/jobs/artifacts). Never let the LLM invent progress.
+- **The office animates off records.** Sprite behavior (working / delegating / idle) is derived in `src/lib/office/sim.ts` from run rows; nothing on screen is inferred from prose.
 - **Records drive prose, never the reverse.** Delegation is structured child runs (`delegation.ts`), one level max — enforced in `startRun`.
 - **No inbound channels.** Send-only email later; agents never read inboxes.
 
@@ -43,6 +48,7 @@ A curation of AI agents doing work. v1 is **headless**: everything is controlled
 
 - `npx convex dev` — local Convex backend (anonymous mode, no account); keep running while using the office
 - `npm run office` — the terminal office
+- `npm run dev` — the pixel office (needs `NEXT_PUBLIC_CONVEX_URL` in `.env.local`, written by `convex dev`)
 - `npm test` — vitest (unit + convex-test); convex tests need `_generated` (run `npx convex codegen` after schema changes)
 - `npx tsc --noEmit` — typecheck
 
