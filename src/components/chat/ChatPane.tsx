@@ -1,26 +1,28 @@
 "use client";
 
-// Right pane: roster tabs, the selected agent's thread, and documents.
-// Same conversation store as the terminal (`@convex-dev/agent` threads), so
-// what you say here shows up in `npm run office` and vice-versa.
+// Right pane: one chat for the whole office. Every agent's thread is merged
+// into a single stream (`chat.timeline`); each person has a colour and a
+// bold name so you can tell who's talking. Plain messages go to the person
+// in the composer's "to" chip (or whoever you clicked in the office); `@Name …`
+// addresses anyone. Same threads as the terminal underneath.
 import { useEffect, useRef, useState } from "react";
-import { useAction, useMutation, usePaginatedQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import Markdown from "react-markdown";
 import { api } from "@/server/convex/_generated/api";
 import type { Id } from "@/server/convex/_generated/dataModel";
 import { parseInput } from "@/lib/mentions";
 import { helpText } from "@/lib/commands";
+import { agentColor, tint } from "@/lib/office/colors";
 import { timeAgo } from "@/lib/time";
 import type { Snapshot } from "@/components/office/OfficeCanvas";
 import { Composer } from "./Composer";
 import { ArtifactView, DocsList } from "./Docs";
-import { LookPicker } from "./LookPicker";
 
 export type PaneView = { tab: "chat" } | { tab: "docs"; artifactId?: Id<"artifacts"> };
 
 interface Notice {
   id: number;
-  agent: string | null; // null = shown in every thread
+  agent: string | null; // who it's about, if anyone
   text: string;
   tone: "info" | "error";
   at: number;
@@ -43,6 +45,7 @@ export function ChatPane({
 }) {
   const roster = snapshot?.agents ?? [];
   const names = roster.map((a) => a.name);
+  const colorOf = (name: string) => agentColor(Math.max(0, names.indexOf(name)));
   const [notices, setNotices] = useState<Notice[]>([]);
   const [pending, setPending] = useState<{ agent: string; text: string } | null>(null);
 
@@ -124,58 +127,35 @@ export function ChatPane({
       if (!target) return notice(`Nobody named "${parsed.agentName}" works here.`, null, "error");
       return talk(target, parsed.message);
     }
-    if (!selectedName) return notice("Hire someone first: menu (top-left) → Hire a new employee", null, "error");
+    if (!selectedName) return notice("Hire someone first: menu (top-left) → Employees", null, "error");
     return talk(selectedName, parsed.raw);
   };
 
   const working = roster.filter((a) => a.status === "working").length;
-  const selected = roster.find((a) => a.name === selectedName) ?? null;
 
   return (
     <aside className="flex h-full min-h-0 flex-col">
       <header className="border-b border-hairline px-4 pt-3 pb-2">
         <div className="flex items-baseline justify-between">
           <h1 className="text-sm font-semibold">The Office</h1>
-          <span className="text-xs text-muted font-mono">
-            {roster.length} people · {working} working
-          </span>
-        </div>
-        <nav className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
-          {roster.map((a) => (
-            <button
-              key={a._id}
-              onClick={() => {
-                onSelectName(a.name);
-                onView({ tab: "chat" });
-              }}
-              className={`flex items-center gap-1.5 ${
-                a.name === selectedName && view.tab === "chat" ? "font-semibold underline underline-offset-4" : "text-muted"
-              }`}
-              title={a.jobTitle}
-            >
-              <span
-                className={`inline-block h-1.5 w-1.5 rounded-full ${
-                  a.status === "working" ? "bg-working animate-pulse" : "bg-hairline"
-                }`}
-              />
-              {a.name}
-            </button>
-          ))}
-          <button
-            onClick={() => onView({ tab: "docs" })}
-            className={`ml-auto ${view.tab === "docs" ? "font-semibold underline underline-offset-4" : "text-muted"}`}
-          >
-            Docs
-          </button>
-        </nav>
-        {selected && view.tab === "chat" && (
-          <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-hairline pt-2 text-xs font-mono text-muted">
-            <span className="truncate">
-              <span className="text-foreground">{selected.name}</span> · {selected.jobTitle}
+          <nav className="flex items-baseline gap-3 text-xs font-mono">
+            <span className="text-muted">
+              {roster.length} people · {working} working
             </span>
-            <LookPicker agentName={selected.name} current={selected.sprite} />
-          </div>
-        )}
+            <button
+              onClick={() => onView({ tab: "chat" })}
+              className={view.tab === "chat" ? "font-semibold underline underline-offset-4" : "text-muted hover:text-foreground"}
+            >
+              Chat
+            </button>
+            <button
+              onClick={() => onView({ tab: "docs" })}
+              className={view.tab === "docs" ? "font-semibold underline underline-offset-4" : "text-muted hover:text-foreground"}
+            >
+              Docs
+            </button>
+          </nav>
+        </div>
       </header>
 
       {view.tab === "docs" ? (
@@ -195,90 +175,123 @@ export function ChatPane({
           )}
         </div>
       ) : (
-        <Thread
-          agent={selectedName}
-          now={now}
-          notices={notices.filter((n) => n.agent === null || n.agent === selectedName)}
-          pending={pending && pending.agent === selectedName ? pending.text : null}
-        />
+        <Stream now={now} colorOf={colorOf} notices={notices} pending={pending} empty={roster.length === 0} />
       )}
 
       <Composer
         roster={names}
         selectedName={selectedName}
+        onSelectName={onSelectName}
         busy={false}
-        placeholder={selectedName ? `Message ${selectedName}… (or @Name, / for commands)` : "Hire someone from the menu first"}
+        placeholder={selectedName ? `Message ${selectedName}… (@Name for someone else, / for commands)` : "Hire someone from the menu first"}
         onSubmit={submit}
       />
     </aside>
   );
 }
 
-function Thread({
-  agent,
+type Item =
+  | { kind: "message"; id: string; agent: string; role: string; text: string; at: number; pending?: boolean }
+  | { kind: "notice"; id: string; agent: string | null; text: string; tone: Notice["tone"]; at: number };
+
+function Stream({
   now,
+  colorOf,
   notices,
   pending,
+  empty,
 }: {
-  agent: string | null;
   now: number;
+  colorOf: (name: string) => string;
   notices: Notice[];
-  pending: string | null;
+  pending: { agent: string; text: string } | null;
+  empty: boolean;
 }) {
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.chat.messages,
-    agent ? { agentName: agent } : "skip",
-    { initialNumItems: 40 }
-  );
-  const messages = [...results].sort((a, b) => a.order - b.order || a.stepOrder - b.stepOrder);
+  const messages = useQuery(api.chat.timeline);
   const bottom = useRef<HTMLDivElement>(null);
-  const count = messages.length + notices.length + (pending ? 1 : 0);
+
+  const items: Item[] = [
+    ...(messages ?? []).map<Item>((m) => ({
+      kind: "message",
+      id: m._id,
+      agent: m.agentName,
+      role: m.role,
+      text: m.text,
+      at: m.createdAt,
+    })),
+    ...notices.map<Item>((n) => ({ kind: "notice", id: String(n.id), agent: n.agent, text: n.text, tone: n.tone, at: n.at })),
+  ].sort((a, b) => a.at - b.at);
+  if (pending) {
+    items.push({ kind: "message", id: "pending", agent: pending.agent, role: "user", text: pending.text, at: now, pending: true });
+  }
+
+  const count = items.length;
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [count, agent]);
+  }, [count]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-sm">
-      {status === "CanLoadMore" && (
-        <button onClick={() => loadMore(40)} className="mb-3 text-xs text-muted hover:underline">
-          earlier messages
-        </button>
-      )}
-      {!agent ? (
+      {empty ? (
         <p className="text-muted">Nobody to talk to yet.</p>
-      ) : messages.length === 0 && status !== "LoadingFirstPage" ? (
-        <p className="text-muted">Say hello. {agent} answers from real work state only.</p>
+      ) : messages && items.length === 0 ? (
+        <p className="text-muted">Say hello. Everyone answers from real work state only.</p>
       ) : null}
       <ol className="space-y-3">
-        {messages.map((m) => (
-          <li key={m._id} className={m.role === "user" ? "text-muted" : ""}>
-            <div className="text-[10px] font-mono uppercase tracking-wider text-muted">
-              {m.role === "user" ? "you" : agent} · {timeAgo(m.createdAt, now)}
-            </div>
-            <div className="md mt-0.5">
-              {m.text ? <Markdown>{m.text}</Markdown> : <span className="text-muted">…</span>}
-            </div>
-          </li>
-        ))}
-        {pending && (
-          <>
-            <li className="text-muted">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-muted">you · sending</div>
-              <div className="mt-0.5 whitespace-pre-wrap">{pending}</div>
+        {items.map((item) => {
+          if (item.kind === "notice") {
+            return (
+              <li
+                key={item.id}
+                className={`whitespace-pre-wrap border-l-2 pl-2 text-xs font-mono ${
+                  item.tone === "error" ? "border-failed text-failed" : "border-hairline text-muted"
+                }`}
+              >
+                {item.agent && <span className="font-semibold">{item.agent} · </span>}
+                {item.text}
+              </li>
+            );
+          }
+          const color = colorOf(item.agent);
+          if (item.role === "user") {
+            return (
+              <li key={item.id} className="flex justify-end">
+                <div className={`max-w-[85%] border border-hairline bg-hairline/30 px-3 py-2 ${item.pending ? "opacity-60" : ""}`}>
+                  <div className="text-[11px] font-mono text-muted">
+                    <span className="font-semibold text-foreground">you</span> → <span style={{ color }}>{item.agent}</span>
+                    {" · "}
+                    {item.pending ? "sending" : timeAgo(item.at, now)}
+                  </div>
+                  <div className="mt-0.5 whitespace-pre-wrap">{item.text}</div>
+                </div>
+              </li>
+            );
+          }
+          return (
+            <li key={item.id} className="flex justify-start">
+              <div
+                className="max-w-[85%] border-l-[3px] px-3 py-2"
+                style={{ borderColor: color, background: tint(color, 0.09) }}
+              >
+                <div className="text-[11px] font-mono text-muted">
+                  <span className="text-[13px] font-bold tracking-wide" style={{ color }}>
+                    {item.agent}
+                  </span>
+                  {" · "}
+                  {timeAgo(item.at, now)}
+                </div>
+                <div className="md mt-0.5">
+                  {item.text ? <Markdown>{item.text}</Markdown> : <span className="text-muted">…</span>}
+                </div>
+              </div>
             </li>
-            <li className="text-muted animate-pulse">{agent} is thinking…</li>
-          </>
-        )}
-        {notices.map((n) => (
-          <li
-            key={n.id}
-            className={`whitespace-pre-wrap border-l-2 pl-2 text-xs font-mono ${
-              n.tone === "error" ? "border-failed text-failed" : "border-hairline text-muted"
-            }`}
-          >
-            {n.text}
+          );
+        })}
+        {pending && (
+          <li className="text-xs text-muted animate-pulse" style={{ color: colorOf(pending.agent) }}>
+            {pending.agent} is thinking…
           </li>
-        ))}
+        )}
       </ol>
       <div ref={bottom} />
     </div>

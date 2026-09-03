@@ -16,7 +16,7 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
 
 - `src/app/` — Next.js App Router: `page.tsx` is the two-pane `[Office] | [Chat]` client page; `providers.tsx` wires `ConvexProvider`
 - `src/components/office/` — `OfficeCanvas.tsx` (canvas loop: integrates positions, draws), `sprites.ts` (image loading + leg-animated draw), `OfficeMenu.tsx` (hamburger), `EmployeesDialog.tsx` (view/edit/fire one employee at a time; hire is its last tab), `HireForm.tsx`, `LookGrid.tsx` (sprite catalogue grid), `ActivityStrip.tsx` (recent runs)
-- `src/components/chat/` — `ChatPane.tsx` (roster, thread, commands), `Composer.tsx` (@mention picker + command suggestions from `src/lib/commands.ts`), `Docs.tsx` (document list + reader)
+- `src/components/chat/` — `ChatPane.tsx` (merged stream with per-agent colours, commands), `Composer.tsx` (@mention picker + command suggestions from `src/lib/commands.ts`), `Docs.tsx` (document list + reader)
 - `src/lib/office/` — pure simulation: `layout.ts` (spots/corridors on the artwork), `sim.ts` (seating, behaviors from runs, routing, walk cycle), `sprites.ts` (the sprite catalogue; `agents.sprite` must be one of its ids) — vitest-covered, no DOM
 - `public/office/` — `office_empty.png` scene, `sprites/`, `props/`
 - `src/server/convex/` — the runtime. Convex functions dir (see `convex.json`); each file is an API namespace:
@@ -29,7 +29,7 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
   - `artifacts.ts` — reading documents (/docs, /read, email lookups, web `byId` with version chain)
   - `office.ts` — the web viewer's reactive snapshot (cast + recent runs + documents)
   - `work.ts` — work-state queries injected into chat
-  - `chat.ts` / `email.ts` — @mention conversations (+ `messages` paginated query for the web); send-only Resend delivery
+  - `chat.ts` / `email.ts` — @mention conversations (+ `timeline` merged stream and `messages` paginated query for the web); send-only Resend delivery
 - `src/server/vercel/` — AI SDK layer: model client (OpenRouter) + pure prompt builders/parsers
 - `src/cli/` — the headless terminal control (REPL, @mention parsing)
 - `src/lib/` — pure helpers shared by CLI and server

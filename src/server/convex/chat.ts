@@ -52,6 +52,54 @@ export const sendMessage = action({
 });
 
 // Office viewer: an agent's conversation, newest page first (reactive).
+// One stream for the whole office: the newest messages from every agent's
+// thread, merged by time. Threads stay per-agent underneath (the terminal
+// and the agents' memory depend on that); this is just how the web reads them.
+const TIMELINE_PER_AGENT = 60;
+const TIMELINE_MAX = 200;
+
+export const timeline = query({
+  args: {},
+  handler: async (ctx) => {
+    const agents = await ctx.db.query("agents").collect();
+    const all: {
+      _id: string;
+      agentId: string;
+      agentName: string;
+      role: string;
+      text: string;
+      status: string;
+      createdAt: number;
+      order: number;
+      stepOrder: number;
+    }[] = [];
+    for (const agent of agents) {
+      if (!agent.chatThreadId) continue;
+      const result = await listMessages(ctx, components.agent, {
+        threadId: agent.chatThreadId,
+        paginationOpts: { numItems: TIMELINE_PER_AGENT, cursor: null },
+        excludeToolMessages: true,
+        statuses: ["success", "pending"],
+      });
+      for (const m of result.page) {
+        all.push({
+          _id: m._id,
+          agentId: agent._id,
+          agentName: agent.name,
+          role: m.message?.role ?? "assistant",
+          text: m.text ?? (m.message ? extractText(m.message) : "") ?? "",
+          status: m.status,
+          createdAt: m._creationTime,
+          order: m.order,
+          stepOrder: m.stepOrder,
+        });
+      }
+    }
+    all.sort((a, b) => a.createdAt - b.createdAt || a.order - b.order || a.stepOrder - b.stepOrder);
+    return all.slice(-TIMELINE_MAX);
+  },
+});
+
 export const messages = query({
   args: { agentName: v.string(), paginationOpts: paginationOptsValidator },
   handler: async (ctx, { agentName, paginationOpts }) => {

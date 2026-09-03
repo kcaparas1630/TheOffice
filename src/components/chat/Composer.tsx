@@ -2,8 +2,9 @@
 
 // Message box with two pickers: `@` suggests people, and clicking into an
 // empty box (or typing `/`) suggests commands with a runnable example each.
-// Enter sends, Shift+Enter breaks the line; while a picker is open, arrows
-// move and Tab/Enter accept.
+// Enter sends, Shift+Enter breaks the line; while a picker is open, ↑↓ move
+// (hover does too) and Tab/Enter accept. A "to" chip shows who a plain
+// message goes to.
 import { useRef, useState } from "react";
 import { fillCommand, matchCommands, type CommandSpec } from "@/lib/commands";
 
@@ -14,15 +15,20 @@ type Picker =
   | { kind: "mention"; matches: string[]; index: number; start: number }
   | { kind: "command"; matches: CommandSpec[]; index: number };
 
+const ROW = "block w-full px-3 py-1.5 text-left transition-colors hover:bg-hairline";
+const ACTIVE = "bg-hairline";
+
 export function Composer({
   roster,
   selectedName,
+  onSelectName,
   placeholder,
   busy,
   onSubmit,
 }: {
   roster: string[];
   selectedName: string | null;
+  onSelectName: (name: string) => void;
   placeholder: string;
   busy: boolean;
   onSubmit: (text: string) => void;
@@ -78,6 +84,8 @@ export function Composer({
     else acceptCommand(picker.matches[picker.index]);
   };
 
+  const highlight = (index: number) => picker && setPicker({ ...picker, index });
+
   const submit = () => {
     const text = value.trim();
     if (!text) return;
@@ -92,7 +100,7 @@ export function Composer({
         e.preventDefault();
         const delta = e.key === "ArrowDown" ? 1 : -1;
         const n = picker.matches.length;
-        setPicker({ ...picker, index: (picker.index + delta + n) % n });
+        highlight((picker.index + delta + n) % n);
         return;
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
@@ -121,16 +129,17 @@ export function Composer({
   return (
     <div className="relative border-t border-hairline px-4 py-3">
       {picker?.kind === "mention" && (
-        <ul className="absolute bottom-full left-4 mb-1 min-w-40 border border-hairline bg-background text-sm shadow-sm">
+        <ul role="listbox" aria-label="People" className="absolute bottom-full left-4 mb-1 min-w-40 border border-hairline bg-background text-sm shadow-sm">
           {picker.matches.map((name, i) => (
-            <li key={name}>
+            <li key={name} role="option" aria-selected={i === picker.index}>
               <button
                 type="button"
+                onMouseEnter={() => highlight(i)}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   acceptMention(name);
                 }}
-                className={`block w-full px-3 py-1 text-left ${i === picker.index ? "bg-hairline/60" : ""}`}
+                className={`${ROW} ${i === picker.index ? ACTIVE : ""}`}
               >
                 @{name}
               </button>
@@ -148,14 +157,15 @@ export function Composer({
             <li key={spec.name} role="option" aria-selected={i === picker.index}>
               <button
                 type="button"
+                onMouseEnter={() => highlight(i)}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   acceptCommand(spec);
                 }}
-                className={`block w-full px-3 py-1.5 text-left ${i === picker.index ? "bg-hairline/60" : ""}`}
+                className={`${ROW} ${i === picker.index ? ACTIVE : ""}`}
               >
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="font-mono">{spec.usage}</span>
+                  <span className="font-mono font-semibold">{spec.usage}</span>
                   <span className="truncate text-xs text-muted">{spec.description}</span>
                 </div>
                 <div className="truncate font-mono text-[11px] text-muted">e.g. {spec.example}</div>
@@ -183,9 +193,26 @@ export function Composer({
         onBlur={() => setPicker(null)}
         className="w-full resize-none bg-transparent font-mono text-sm outline-none placeholder:text-muted disabled:opacity-60"
       />
-      <p className="mt-1 text-[10px] text-muted">
-        @Name to talk · type / for commands · Enter sends, Shift+Enter for a new line
-      </p>
+      <div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-muted">
+        <label className="flex items-center gap-1">
+          to
+          <select
+            aria-label="Send plain messages to"
+            value={selectedName ?? ""}
+            onChange={(e) => e.target.value && onSelectName(e.target.value)}
+            disabled={roster.length === 0}
+            className="bg-transparent font-mono text-foreground outline-none"
+          >
+            {roster.length === 0 && <option value="">nobody yet</option>}
+            {roster.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span>@Name to talk · / for commands · Enter sends, Shift+Enter new line</span>
+      </div>
     </div>
   );
 }
