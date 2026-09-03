@@ -10,7 +10,8 @@ import {
   type SnapAgent,
   type SnapRun,
 } from "./sim";
-import { AISLE_X, DESK_SEATS, LANE_Y, MANAGER_SEAT } from "./layout";
+import { DESK_SEATS, MANAGER_SEAT, RECEPTION_SEAT } from "./layout";
+import { gridFromRows, lineIsClear } from "./nav";
 
 const hazel: SnapAgent = { _id: "hazel", name: "Hazel", supervisorId: null, hiredAt: 1 };
 const milton: SnapAgent = { _id: "milton", name: "Milton", supervisorId: "hazel", hiredAt: 2 };
@@ -27,6 +28,14 @@ const run = (over: Partial<SnapRun>): SnapRun => ({
 });
 
 describe("assignSeats", () => {
+  test("a receptionist takes the front desk, by job title", () => {
+    const pam: SnapAgent = { _id: "pam", name: "Pam", jobTitle: "Receptionist", supervisorId: "hazel", hiredAt: 4 };
+    const seats = assignSeats([hazel, milton, pam]);
+    expect(seats.get("hazel")).toBe(MANAGER_SEAT);
+    expect(seats.get("pam")).toBe(RECEPTION_SEAT);
+    expect(seats.get("milton")).toBe(DESK_SEATS[0]);
+  });
+
   test("the team lead takes the office; others fill desks in hire order", () => {
     const seats = assignSeats([otto, milton, hazel]);
     expect(seats.get("hazel")).toBe(MANAGER_SEAT);
@@ -72,12 +81,19 @@ describe("deriveBehaviors", () => {
 });
 
 describe("routing", () => {
-  test("stays on corridors and uses the aisle to change corridors", () => {
-    const path = routeTo({ x: 0.245, y: 0.455 }, "H1", DESK_SEATS[7]); // H1 -> H2
-    expect(path[1]).toEqual({ x: 0.245, y: LANE_Y.H1 });
-    expect(path[2]).toEqual({ x: AISLE_X, y: LANE_Y.H1 });
-    expect(path[3]).toEqual({ x: AISLE_X, y: LANE_Y.H2 });
+  test("walks around furniture on the office grid and ends on the seat", () => {
+    const path = routeTo({ x: 0.245, y: 0.455 }, DESK_SEATS[7]);
+    expect(path[0]).toEqual({ x: 0.245, y: 0.455 });
     expect(path[path.length - 1]).toEqual({ x: DESK_SEATS[7].x, y: DESK_SEATS[7].y });
+    expect(path.length).toBeGreaterThan(2); // the desk clusters are in the way
+  });
+
+  test("a custom grid steers the route through the gap", () => {
+    const grid = gridFromRows(["......", "..##..", "..##..", "..##..", "......", "......"]);
+    const to = { id: "x", x: 0.9, y: 0.4, facing: "left" as const };
+    const path = routeTo({ x: 0.1, y: 0.4 }, to, grid);
+    for (let i = 1; i < path.length - 1; i++) expect(lineIsClear(grid, path[i - 1], path[i])).toBe(true);
+    expect(path[path.length - 1]).toEqual({ x: 0.9, y: 0.4 });
   });
 
   test("advance walks along the path and reports facing", () => {

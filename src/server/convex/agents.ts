@@ -8,8 +8,10 @@ import { isSpriteId, SPRITE_IDS } from "../../lib/office/sprites";
 export const hire = mutation({
   args: {
     name: v.string(),
-    jobTitle: v.string(),
-    jobDescription: v.string(),
+    // Either a role (title + description come from it) or free text.
+    roleId: v.optional(v.id("roles")),
+    jobTitle: v.optional(v.string()),
+    jobDescription: v.optional(v.string()),
     successfulDay: v.array(v.string()),
     traits: v.array(v.string()),
     notes: v.string(),
@@ -22,8 +24,16 @@ export const hire = mutation({
     }
     const nameError = validateAgentName(args.name);
     if (nameError) throw new Error(nameError);
-    if (!args.jobTitle.trim()) throw new Error("Job title is required.");
-    if (!args.jobDescription.trim()) throw new Error("Job description is required.");
+    let jobTitle = args.jobTitle?.trim() ?? "";
+    let jobDescription = args.jobDescription?.trim() ?? "";
+    if (args.roleId) {
+      const role = await ctx.db.get(args.roleId);
+      if (!role) throw new Error("Role not found.");
+      jobTitle = role.roleName;
+      jobDescription = role.roleDescription;
+    }
+    if (!jobTitle) throw new Error("Pick a role (or give a job title).");
+    if (!jobDescription) throw new Error("Job description is required.");
     if (args.successfulDay.length === 0) {
       throw new Error("Describe at least one item of a successful day.");
     }
@@ -39,8 +49,9 @@ export const hire = mutation({
 
     const agentId = await ctx.db.insert("agents", {
       name: args.name.trim(),
-      jobTitle: args.jobTitle.trim(),
-      jobDescription: args.jobDescription.trim(),
+      roleId: args.roleId,
+      jobTitle,
+      jobDescription,
       successfulDay: args.successfulDay.map((s) => s.trim()).filter(Boolean),
       personality: {
         traits: args.traits.map((t) => t.trim().toLowerCase()).filter(Boolean),
@@ -63,6 +74,7 @@ export const roster = query({
         _id: agent._id,
         name: agent.name,
         jobTitle: agent.jobTitle,
+        roleId: agent.roleId ?? null,
         status: agent.status,
         traits: agent.personality.traits,
         supervisorName: agent.supervisorId
@@ -106,11 +118,13 @@ export const update = mutation({
     traits: v.optional(v.array(v.string())),
     notes: v.optional(v.string()),
     supervisorName: v.optional(v.string()),
+    roleId: v.optional(v.id("roles")),
   },
   handler: async (ctx, args) => {
     const agent = await findByName(ctx, args.name);
     if (!agent) throw new Error(`Nobody named "${args.name}" works here.`);
     const patch: Partial<{
+      roleId: Id<"roles">;
       jobTitle: string;
       jobDescription: string;
       successfulDay: string[];
@@ -118,11 +132,18 @@ export const update = mutation({
       supervisorId: Id<"agents"> | undefined;
     }> = {};
 
-    if (args.jobTitle !== undefined) {
+    if (args.roleId !== undefined) {
+      const role = await ctx.db.get(args.roleId);
+      if (!role) throw new Error("Role not found.");
+      patch.roleId = role._id;
+      patch.jobTitle = role.roleName;
+      patch.jobDescription = role.roleDescription;
+    }
+    if (args.jobTitle !== undefined && args.roleId === undefined) {
       if (!args.jobTitle.trim()) throw new Error("Job title is required.");
       patch.jobTitle = args.jobTitle.trim();
     }
-    if (args.jobDescription !== undefined) {
+    if (args.jobDescription !== undefined && args.roleId === undefined) {
       if (!args.jobDescription.trim()) throw new Error("Job description is required.");
       patch.jobDescription = args.jobDescription.trim();
     }

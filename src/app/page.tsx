@@ -9,6 +9,7 @@ import { OfficeCanvas } from "@/components/office/OfficeCanvas";
 import { ActivityStrip } from "@/components/office/ActivityStrip";
 import { OfficeMenu } from "@/components/office/OfficeMenu";
 import { EmployeesDialog, type EmployeesTab } from "@/components/office/EmployeesDialog";
+import { RolesDialog } from "@/components/office/RolesDialog";
 import { ChatPane, type PaneView } from "@/components/chat/ChatPane";
 
 export default function Home() {
@@ -16,6 +17,7 @@ export default function Home() {
   const [chosenName, setSelectedName] = useState<string | null>(null);
   const [view, setView] = useState<PaneView>({ tab: "chat" });
   const [employees, setEmployees] = useState<EmployeesTab | null>(null);
+  const [rolesOpen, setRolesOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -39,7 +41,12 @@ export default function Home() {
     <div className="grid h-dvh grid-cols-[minmax(0,1fr)_minmax(22rem,30rem)]">
       <main className="flex min-h-0 flex-col">
         <div className="relative min-h-0 flex-1">
-          <OfficeMenu items={[{ label: "Employees", onSelect: () => setEmployees("profile") }]} />
+          <OfficeMenu
+            items={[
+              { label: "Employees", onSelect: () => setEmployees("profile") },
+              { label: "Roles", onSelect: () => setRolesOpen(true) },
+            ]}
+          />
           <OfficeCanvas snapshot={snapshot} selectedId={selectedId} onSelect={selectById} />
         </div>
         <ActivityStrip
@@ -53,6 +60,7 @@ export default function Home() {
         <EmployeesDialog
           roster={snapshot?.agents ?? []}
           jobs={snapshot?.jobs ?? []}
+          roles={snapshot?.roles ?? []}
           now={now}
           initialName={selectedName}
           initialTab={employees}
@@ -61,8 +69,13 @@ export default function Home() {
             setSelectedName(name);
             setView({ tab: "chat" });
           }}
+          onOpenRoles={() => {
+            setEmployees(null);
+            setRolesOpen(true);
+          }}
         />
       )}
+      {rolesOpen && <RolesDialog onClose={() => setRolesOpen(false)} />}
       <div className="min-h-0 border-l border-hairline">
         <ChatPane
           snapshot={snapshot}

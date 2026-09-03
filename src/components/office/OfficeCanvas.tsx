@@ -6,12 +6,12 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "@/server/convex/_generated/api";
-import { SPRITE_HEIGHT, type Facing, type Spot } from "@/lib/office/layout";
+import { isSeatId, SPRITE_HEIGHT, type Facing, type Spot } from "@/lib/office/layout";
 import {
   advance,
   assignSeats,
   deriveBehaviors,
-  nearestLane,
+  NAV,
   pickIdleSpot,
   recentlyFinished,
   routeTo,
@@ -20,7 +20,8 @@ import {
   type Point,
 } from "@/lib/office/sim";
 import { defaultSpriteFor, isSpriteId } from "@/lib/office/sprites";
-import { drawSprite, loadScene, loadSprites, spriteWidth, type SpriteLibrary } from "./sprites";
+import { isBlockedCell } from "@/lib/office/nav";
+import { drawSeated, drawSprite, loadScene, loadSprites, spriteWidth, type SpriteLibrary } from "./sprites";
 
 export type Snapshot = FunctionReturnType<typeof api.office.snapshot>;
 
@@ -198,7 +199,7 @@ export function OfficeCanvas({
 
         if (desired && desired.id !== person.target.id) {
           person.target = desired;
-          person.path = routeTo(person.pos, nearestLane(person.pos.y), desired);
+          person.path = routeTo(person.pos, desired);
         }
 
         if (person.path.length > 0) {
@@ -233,6 +234,9 @@ export function OfficeCanvas({
       }
     };
 
+    const showNav =
+      process.env.NODE_ENV !== "production" && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("nav");
+
     const draw = () => {
       const { scene, sprites, bg } = assets.current;
       const { x: ox, y: oy, size } = geometry.current;
@@ -244,6 +248,7 @@ export function OfficeCanvas({
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(scene, ox, oy, size, size);
+      if (showNav) drawNavOverlay(ctx, ox, oy, size, [...people.current.values()].map((p) => [p.pos, ...p.path]));
 
       const snap = snapRef.current;
       if (!snap) return;
@@ -258,16 +263,21 @@ export function OfficeCanvas({
         const px = ox + person.pos.x * size;
         const py = oy + person.pos.y * size;
         const moving = person.path.length > 0;
-        const atSeat = !moving && (person.target.id.startsWith("desk") || person.target.id === "manager");
-        drawSprite(ctx, set, {
-          x: px,
-          y: py,
-          height: H,
-          facing: person.facing,
-          phase: person.phase,
-          moving,
-          seated: atSeat,
-        });
+        const atSeat = !moving && isSeatId(person.target.id);
+        const sat =
+          atSeat &&
+          drawSeated(ctx, set, { x: px, y: py, height: H, facing: person.facing, cover: person.target.cover ?? 0 });
+        if (!sat) {
+          drawSprite(ctx, set, {
+            x: px,
+            y: py,
+            height: H,
+            facing: person.facing,
+            phase: person.phase,
+            moving,
+            seated: atSeat,
+          });
+        }
 
         // Name + status, from records.
         const behavior = behaviors.get(person.id);
@@ -357,4 +367,28 @@ function drawLabel(
     ctx.fillStyle = line.color;
     ctx.fillText(line.text, cx, top + pad + (i + 1) * lineH - 3);
   });
+}
+
+// Dev aid (`?nav` in the URL): tint blocked cells and trace planned paths so
+// the walkability mask can be tuned against the artwork.
+function drawNavOverlay(ctx: CanvasRenderingContext2D, ox: number, oy: number, size: number, paths: Point[][]) {
+  const cw = size / NAV.cols;
+  const ch = size / NAV.rows;
+  ctx.save();
+  ctx.fillStyle = "rgba(179, 38, 30, 0.28)";
+  for (let cy = 0; cy < NAV.rows; cy++) {
+    for (let cx = 0; cx < NAV.cols; cx++) {
+      if (isBlockedCell(NAV, cx, cy)) ctx.fillRect(ox + cx * cw, oy + cy * ch, cw, ch);
+    }
+  }
+  ctx.strokeStyle = "rgba(47, 122, 62, 0.9)";
+  ctx.lineWidth = 2;
+  for (const path of paths) {
+    if (path.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(ox + path[0].x * size, oy + path[0].y * size);
+    for (const p of path.slice(1)) ctx.lineTo(ox + p.x * size, oy + p.y * size);
+    ctx.stroke();
+  }
+  ctx.restore();
 }

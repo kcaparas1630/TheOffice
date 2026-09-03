@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/server/convex/_generated/api";
+import type { Id } from "@/server/convex/_generated/dataModel";
 import { validateAgentName } from "@/lib/agentName";
 import { SPRITE_CATALOG } from "@/lib/office/sprites";
 import { LookGrid } from "./LookGrid";
@@ -14,20 +15,31 @@ export const FIELD =
   "w-full border-0 border-b border-hairline bg-transparent py-1 text-sm outline-none focus:border-foreground placeholder:text-muted";
 export const LABEL = "block text-[10px] font-mono uppercase tracking-wider text-muted";
 
+export interface RoleOption {
+  _id: Id<"roles">;
+  roleName: string;
+  roleDescription: string;
+  department: string | null;
+}
+
 export function HireForm({
   roster,
+  roles,
   onHired,
   onSpriteChange,
+  onOpenRoles,
 }: {
   roster: { name: string; jobTitle: string }[];
+  roles: RoleOption[];
   onHired: (name: string) => void;
   onSpriteChange?: (sprite: string) => void;
+  onOpenRoles?: () => void;
 }) {
   const hire = useMutation(api.agents.hire);
   const [sprite, setSprite] = useState(SPRITE_CATALOG[0].id);
   const [name, setName] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
-  const [jobDescription, setJobDescription] = useState("");
+  const [roleId, setRoleId] = useState<string>("");
+  const role = roles.find((r) => r._id === roleId) ?? null;
   const [successfulDay, setSuccessfulDay] = useState("");
   const [traits, setTraits] = useState("");
   const [notes, setNotes] = useState("");
@@ -45,16 +57,14 @@ export function HireForm({
     const nameError = validateAgentName(name);
     if (nameError) return setError(nameError);
     const day = splitLines(successfulDay);
-    if (!jobTitle.trim()) return setError("Job title is required.");
-    if (!jobDescription.trim()) return setError("Job description is required.");
+    if (!role) return setError("Pick a role.");
     if (day.length === 0) return setError("Describe at least one item of a successful day.");
     setError(null);
     setBusy(true);
     try {
       const hired = await hire({
         name: name.trim(),
-        jobTitle: jobTitle.trim(),
-        jobDescription: jobDescription.trim(),
+        roleId: role._id,
         successfulDay: day,
         traits: splitCommas(traits),
         notes: notes.trim(),
@@ -85,18 +95,31 @@ export function HireForm({
           <input id="hire-name" className={FIELD} value={name} onChange={(e) => setName(e.target.value)} placeholder="Edna" autoFocus />
         </div>
         <div>
-          <label className={LABEL} htmlFor="hire-title">
-            Job title
+          <label className={LABEL} htmlFor="hire-role">
+            Role
           </label>
-          <input id="hire-title" className={FIELD} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} placeholder="CTO" />
+          <RoleSelect id="hire-role" roles={roles} value={roleId} onChange={setRoleId} />
         </div>
       </div>
 
       <div>
-        <label className={LABEL} htmlFor="hire-desc">
-          Job description (a real description of the role, not a command)
-        </label>
-        <textarea id="hire-desc" rows={3} className={`${FIELD} resize-y`} value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} />
+        <span className={LABEL}>Job description (from the role)</span>
+        <p className="py-1 text-sm text-muted">
+          {role ? (
+            role.roleDescription
+          ) : roles.length === 0 ? (
+            <>
+              No roles yet.{" "}
+              {onOpenRoles && (
+                <button type="button" onClick={onOpenRoles} className="underline hover:text-foreground">
+                  Create one first
+                </button>
+              )}
+            </>
+          ) : (
+            "Pick a role to see what the job is."
+          )}
+        </p>
       </div>
 
       <div>
@@ -150,6 +173,37 @@ export function HireForm({
         </button>
       </footer>
     </form>
+  );
+}
+
+// Roles grouped by department; "" = none picked.
+export function RoleSelect({
+  id,
+  roles,
+  value,
+  onChange,
+}: {
+  id: string;
+  roles: RoleOption[];
+  value: string;
+  onChange: (roleId: string) => void;
+}) {
+  const departments = [...new Set(roles.map((r) => r.department ?? "Other"))];
+  return (
+    <select id={id} className={FIELD} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Pick a role…</option>
+      {departments.map((d) => (
+        <optgroup key={d} label={d}>
+          {roles
+            .filter((r) => (r.department ?? "Other") === d)
+            .map((r) => (
+              <option key={r._id} value={r._id}>
+                {r.roleName}
+              </option>
+            ))}
+        </optgroup>
+      ))}
+    </select>
   );
 }
 

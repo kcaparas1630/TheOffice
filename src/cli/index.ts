@@ -86,9 +86,33 @@ async function hireWizard(rl: Interface, convex: ConvexHttpClient) {
     console.log(yellow(`  ${error}`));
   }
 
-  const jobTitle = (await rl.question("Job title (e.g. CTO): ")).trim();
-  console.log(dim("Job description — a real description of the role, not a command."));
-  const jobDescription = (await rl.question("Job description: ")).trim();
+  // Roles are defined once (web menu → Roles, or roles:seed) and picked here;
+  // a typed title is still accepted when no roles exist.
+  const roles = await convex.query(api.roles.list, {});
+  let roleId: (typeof roles)[number]["_id"] | undefined;
+  let jobTitle = "";
+  let jobDescription = "";
+  if (roles.length > 0) {
+    console.log("Roles:");
+    roles.forEach((r, i) => console.log(`  ${i + 1}. ${r.roleName}${r.department ? dim(` · ${r.department}`) : ""}`));
+    for (;;) {
+      const answer = (await rl.question("Role (number or name; empty to type a title instead): ")).trim();
+      if (!answer) break;
+      const byNumber = roles[Number(answer) - 1];
+      const picked = byNumber ?? roles.find((r) => r.roleName.toLowerCase() === answer.toLowerCase());
+      if (picked) {
+        roleId = picked._id;
+        jobTitle = picked.roleName;
+        break;
+      }
+      console.log(yellow(`  No role "${answer}".`));
+    }
+  }
+  if (!roleId) {
+    jobTitle = (await rl.question("Job title (e.g. CTO): ")).trim();
+    console.log(dim("Job description — a real description of the role, not a command."));
+    jobDescription = (await rl.question("Job description: ")).trim();
+  }
   const successfulDay = await askList(rl, "A successful day would be:");
   console.log(dim("Personality traits — e.g. jolly, optimistic / strict, pessimistic."));
   const traitsRaw = (await rl.question("Traits (comma-separated): ")).trim();
@@ -119,8 +143,9 @@ async function hireWizard(rl: Interface, convex: ConvexHttpClient) {
 
   const hired = await convex.mutation(api.agents.hire, {
     name,
-    jobTitle,
-    jobDescription,
+    roleId,
+    jobTitle: roleId ? undefined : jobTitle,
+    jobDescription: roleId ? undefined : jobDescription,
     successfulDay,
     traits,
     notes,

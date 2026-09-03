@@ -13,6 +13,8 @@ export const snapshot = query({
     const runs = await ctx.db.query("runs").order("desc").take(RECENT_RUNS);
     const artifacts = await ctx.db.query("artifacts").order("desc").take(RECENT_ARTIFACTS);
     const jobs = await ctx.db.query("jobs").collect();
+    const roles = await ctx.db.query("roles").collect();
+    const roleName = new Map(roles.map((r) => [r._id, r.roleName]));
     const jobTitle = new Map(jobs.map((j) => [j._id, j.title]));
     const agentName = new Map(agents.map((a) => [a._id, a.name]));
 
@@ -21,6 +23,8 @@ export const snapshot = query({
         _id: a._id,
         name: a.name,
         jobTitle: a.jobTitle,
+        roleId: a.roleId ?? null,
+        roleName: a.roleId ? (roleName.get(a.roleId) ?? null) : null,
         jobDescription: a.jobDescription,
         successfulDay: a.successfulDay,
         notes: a.personality.notes,
@@ -31,6 +35,15 @@ export const snapshot = query({
         sprite: a.sprite ?? null,
         hiredAt: a._creationTime,
       })),
+      roles: roles
+        .map((r) => ({
+          _id: r._id,
+          roleName: r.roleName,
+          roleDescription: r.roleDescription,
+          department: r.department ?? null,
+          supervisorId: r.supervisorId ?? null,
+        }))
+        .sort((a, b) => (a.department ?? "").localeCompare(b.department ?? "") || a.roleName.localeCompare(b.roleName)),
       jobs: jobs.map((j) => ({
         _id: j._id,
         agentId: j.agentId,

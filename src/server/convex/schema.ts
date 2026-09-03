@@ -2,9 +2,20 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // Roles are defined once and assigned to people. A role carries the job
+  // title and the real job description; the org chart lives here too (a
+  // role may report to another role). Grouped into departments by name.
+  roles: defineTable({
+    roleName: v.string(), // "Receptionist"
+    roleDescription: v.string(), // a description of the job, not a command
+    department: v.optional(v.string()), // "Front desk", "Sales", …
+    supervisorId: v.optional(v.id("roles")), // the role this one reports to
+  }).index("by_name", ["roleName"]),
+
   // The cast. Each agent is data — it "comes alive" only when a cron or
   // mention invokes a function that loads its row and calls the LLM.
   agents: defineTable({
+    roleId: v.optional(v.id("roles")), // the role they hold; title/description copy from it
     name: v.string(), // "Edna" — addressed in chat as @Edna
     jobTitle: v.string(), // "CTO"
     // A real job description (prose), not a command.

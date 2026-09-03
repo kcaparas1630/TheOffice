@@ -4,6 +4,10 @@
 
 export type SpriteView = "front" | "back" | "right";
 
+// Which way a sitting pose was drawn: facing the viewer (a desk you sit
+// behind), sideways (an open-plan desk; mirrored for the other side), or away.
+export type SitFacing = "front" | "right" | "back";
+
 export interface SpriteOption {
   id: string;
   label: string;
@@ -11,21 +15,29 @@ export interface SpriteOption {
   // Which way the "right" file actually faces; some sets were drawn facing
   // left. The renderer mirrors to produce the other direction.
   sideFaces?: "left" | "right";
+  // Sitting pose (`poses/<id>_sit.png`), if the set has one.
+  sit?: SitFacing;
 }
 
 export const SPRITE_CATALOG: SpriteOption[] = [
-  { id: "c01", label: "Navy suit", views: ["front", "back", "right"] },
+  { id: "c01", label: "Navy suit", views: ["front", "back", "right"], sit: "front" },
   { id: "c03", label: "Mustard sweater", views: ["front", "back", "right"] },
-  { id: "c04", label: "Blue blazer", views: ["front", "back", "right"] },
-  { id: "c05", label: "Light-blue shirt", views: ["front", "back"] },
-  { id: "c06", label: "Cream shirt", views: ["front", "back", "right"] },
-  { id: "c07", label: "Green shirt", views: ["front", "back", "right"], sideFaces: "left" },
-  { id: "c08", label: "Rust shirt", views: ["front", "back", "right"], sideFaces: "left" },
-  { id: "c09", label: "Burgundy blazer", views: ["front", "back", "right"] },
-  { id: "c10", label: "Dark navy suit", views: ["front", "back", "right"] },
-  { id: "c11", label: "Cream sweater", views: ["front", "back", "right"] },
-  { id: "c12", label: "Teal shirt", views: ["front", "back", "right"], sideFaces: "left" },
+  { id: "c04", label: "Blue blazer", views: ["front", "back", "right"], sit: "right" },
+  { id: "c05", label: "Light-blue shirt", views: ["front", "back"], sit: "right" },
+  { id: "c06", label: "Cream shirt", views: ["front", "back", "right"], sit: "right" },
+  { id: "c07", label: "Green shirt", views: ["front", "back", "right"], sideFaces: "left", sit: "right" },
+  { id: "c08", label: "Rust shirt", views: ["front", "back", "right"], sideFaces: "left", sit: "right" },
+  { id: "c09", label: "Burgundy blazer", views: ["front", "back", "right"], sit: "front" },
+  { id: "c10", label: "Dark navy suit", views: ["front", "back", "right"], sit: "right" },
+  { id: "c11", label: "Cream sweater", views: ["front", "back", "right"], sit: "back" },
+  { id: "c12", label: "Teal shirt", views: ["front", "back", "right"], sideFaces: "left", sit: "right" },
 ];
+
+export type PoseName = "sit" | "coffee" | "copier";
+
+export function poseUrl(id: string, pose: PoseName): string {
+  return `/office/sprites/poses/${id}_${pose}.png`;
+}
 
 export const SPRITE_IDS = SPRITE_CATALOG.map((s) => s.id);
 

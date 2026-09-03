@@ -1,20 +1,14 @@
 // Pure office simulation: who sits where, what each person is doing (derived
 // only from run records, never guessed), how they walk between spots, and
 // the walk-cycle pose. The canvas component just integrates and draws.
-import {
-  AISLE_X,
-  DESK_SEATS,
-  IDLE_SPOTS,
-  LANE_Y,
-  MANAGER_SEAT,
-  type Facing,
-  type LaneId,
-  type Spot,
-} from "./layout";
+import { DESK_SEATS, IDLE_SPOTS, isSeatId, MANAGER_SEAT, RECEPTION_SEAT, type Facing, type Spot } from "./layout";
+import { centerOf, gridFromRows, isWalkable, nearestOpenCell, planRoute, type NavGrid } from "./nav";
+import { NAV_ROWS } from "./navmask";
 
 export interface SnapAgent {
   _id: string;
   name: string;
+  jobTitle?: string;
   supervisorId: string | null;
   hiredAt: number;
 }
@@ -40,14 +34,20 @@ export interface Point {
 
 // ---------- seating ----------
 
-// The first-hired agent who leads a team and reports to nobody takes the
-// private office; everyone else fills desks in hire order.
+// Seats follow roles, read off records: the first-hired agent who leads a
+// team and reports to nobody takes the private office, whoever's job title
+// says reception takes the front desk, everyone else fills desks in hire
+// order.
+const RECEPTION_TITLE = /recept|front desk/i;
+
 export function assignSeats(agents: SnapAgent[]): Map<string, Spot> {
   const ordered = [...agents].sort((a, b) => a.hiredAt - b.hiredAt);
   const leads = new Set(ordered.map((a) => a.supervisorId).filter(Boolean));
   const seats = new Map<string, Spot>();
   const manager = ordered.find((a) => !a.supervisorId && leads.has(a._id));
   if (manager) seats.set(manager._id, MANAGER_SEAT);
+  const receptionist = ordered.find((a) => !seats.has(a._id) && RECEPTION_TITLE.test(a.jobTitle ?? ""));
+  if (receptionist) seats.set(receptionist._id, RECEPTION_SEAT);
   let desk = 0;
   for (const agent of ordered) {
     if (seats.has(agent._id)) continue;
@@ -96,7 +96,7 @@ export function recentlyFinished(runs: SnapRun[], now: number, windowMs = 7000) 
 export function standBeside(worker: Spot): Spot {
   const dx = worker.facing === "right" ? -0.045 : 0.045;
   const facing: Facing = worker.facing === "right" ? "right" : "left";
-  return { id: `beside-${worker.id}`, x: worker.x + dx, y: worker.y, facing, lane: worker.lane };
+  return { id: `beside-${worker.id}`, x: worker.x + dx, y: worker.y, facing };
 }
 
 export function pickIdleSpot(seat: Spot, current: string | null, random = Math.random): Spot {
@@ -116,20 +116,24 @@ function pushPoint(path: Point[], p: Point) {
   path.push(p);
 }
 
-// Manhattan route: up/down to your corridor, along it (via the aisle if the
-// destination is on the other corridor), then up/down to the target.
-export function routeTo(from: Point, fromLane: LaneId, to: Spot): Point[] {
-  const path: Point[] = [{ x: from.x, y: from.y }];
-  const y0 = LANE_Y[fromLane];
-  const y1 = LANE_Y[to.lane];
-  pushPoint(path, { x: from.x, y: y0 });
-  if (fromLane !== to.lane) {
-    pushPoint(path, { x: AISLE_X, y: y0 });
-    pushPoint(path, { x: AISLE_X, y: y1 });
+// The office's walkability grid (walls, furniture and the outside are
+// blocked). Built once from the generated mask.
+export const NAV: NavGrid = gridFromRows(NAV_ROWS);
+
+// Route between two points over open floor: A* on the grid, straightened.
+// A seat is reached exactly (the last step may leave the floor, chairs are
+// blocked); any other spot snaps to the nearest open cell so nobody ends
+// up standing in a plant.
+export function routeTo(from: Point, to: Spot, grid: NavGrid = NAV): Point[] {
+  let target: Point = { x: to.x, y: to.y };
+  if (!isSeatId(to.id) && !isWalkable(grid, target)) {
+    const cell = nearestOpenCell(grid, target);
+    if (cell) target = centerOf(grid, cell.cx, cell.cy);
   }
-  pushPoint(path, { x: to.x, y: y1 });
-  pushPoint(path, { x: to.x, y: to.y });
-  return path;
+  const path = planRoute(grid, { x: from.x, y: from.y }, target);
+  const out: Point[] = [];
+  for (const p of path) pushPoint(out, p);
+  return out;
 }
 
 export function facingFor(dx: number, dy: number): Facing {
@@ -190,11 +194,4 @@ export function walkPose(phase: number): WalkPose {
       { lift: lift * Math.max(0, -s), stride: -stride * s },
     ],
   };
-}
-
-// Every spot sits nearer one corridor than the other, so the corridor a
-// walker should use is simply the closer one; this also recovers cleanly
-// when a walk is interrupted mid-route.
-export function nearestLane(y: number): LaneId {
-  return Math.abs(y - LANE_Y.H1) <= Math.abs(y - LANE_Y.H2) ? "H1" : "H2";
 }

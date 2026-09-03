@@ -19,6 +19,7 @@ import type * as jobs from "../jobs.js";
 import type * as model_agents from "../model/agents.js";
 import type * as model_runs from "../model/runs.js";
 import type * as office from "../office.js";
+import type * as roles from "../roles.js";
 import type * as runs from "../runs.js";
 import type * as work from "../work.js";
 
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   "model/agents": typeof model_agents;
   "model/runs": typeof model_runs;
   office: typeof office;
+  roles: typeof roles;
   runs: typeof runs;
   work: typeof work;
 }>;

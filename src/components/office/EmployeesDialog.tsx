@@ -9,15 +9,17 @@ import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/server/convex/_generated/api";
 import type { Snapshot } from "./OfficeCanvas";
+import type { Id } from "@/server/convex/_generated/dataModel";
 import { defaultSpriteFor, isSpriteId, SPRITE_CATALOG, spriteUrl } from "@/lib/office/sprites";
 import { timeAgo } from "@/lib/time";
-import { errorText, FIELD, HireForm, LABEL, splitCommas, splitLines } from "./HireForm";
+import { errorText, FIELD, HireForm, LABEL, RoleSelect, splitCommas, splitLines } from "./HireForm";
 import { LookGrid } from "./LookGrid";
 
 export type EmployeesTab = "profile" | "job" | "personality" | "look" | "hire";
 
 type Agent = Snapshot["agents"][number];
 type Job = Snapshot["jobs"][number];
+type Role = Snapshot["roles"][number];
 
 const TABS: { id: EmployeesTab; label: string }[] = [
   { id: "profile", label: "Profile" },
@@ -29,19 +31,23 @@ const TABS: { id: EmployeesTab; label: string }[] = [
 export function EmployeesDialog({
   roster,
   jobs,
+  roles,
   now,
   initialName,
   initialTab = "profile",
   onClose,
   onSelectName,
+  onOpenRoles,
 }: {
   roster: Agent[];
   jobs: Job[];
+  roles: Role[];
   now: number;
   initialName: string | null;
   initialTab?: EmployeesTab;
   onClose: () => void;
   onSelectName: (name: string) => void;
+  onOpenRoles?: () => void;
 }) {
   const [name, setName] = useState<string | null>(initialName);
   const [tab, setTab] = useState<EmployeesTab>(roster.length === 0 ? "hire" : initialTab);
@@ -169,6 +175,8 @@ export function EmployeesDialog({
               {hiring ? (
                 <HireForm
                   roster={roster}
+                  roles={roles}
+                  onOpenRoles={onOpenRoles}
                   onSpriteChange={setHireSprite}
                   onHired={(hired) => {
                     setName(hired);
@@ -177,7 +185,7 @@ export function EmployeesDialog({
                   }}
                 />
               ) : tab === "profile" ? (
-                <ProfilePanel key={agent!._id} agent={agent!} roster={roster} now={now} />
+                <ProfilePanel key={agent!._id} agent={agent!} roster={roster} roles={roles} now={now} />
               ) : tab === "job" ? (
                 <JobPanel key={agent!._id} agent={agent!} jobs={jobs.filter((j) => j.agentId === agent!._id)} />
               ) : tab === "personality" ? (
@@ -251,18 +259,18 @@ function useSave() {
   return { save, busy, error, saved };
 }
 
-function ProfilePanel({ agent, roster, now }: { agent: Agent; roster: Agent[]; now: number }) {
-  const [jobTitle, setJobTitle] = useState(agent.jobTitle);
+function ProfilePanel({ agent, roster, roles, now }: { agent: Agent; roster: Agent[]; roles: Role[]; now: number }) {
+  const [roleId, setRoleId] = useState<string>(agent.roleId ?? "");
   const [supervisorName, setSupervisorName] = useState(agent.supervisorName ?? "");
   const { save, busy, error, saved } = useSave();
-  const dirty = jobTitle !== agent.jobTitle || supervisorName !== (agent.supervisorName ?? "");
+  const dirty = roleId !== (agent.roleId ?? "") || supervisorName !== (agent.supervisorName ?? "");
   const reports = roster.filter((a) => a.supervisorId === agent._id);
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save({ name: agent.name, jobTitle, supervisorName });
+        save({ name: agent.name, supervisorName, ...(roleId && roleId !== agent.roleId ? { roleId: roleId as Id<"roles"> } : {}) });
       }}
       className="flex flex-col gap-4"
     >
@@ -271,10 +279,17 @@ function ProfilePanel({ agent, roster, now }: { agent: Agent; roster: Agent[]; n
         <div className="py-1 text-sm">@{agent.name}</div>
       </div>
       <div>
-        <label className={LABEL} htmlFor="emp-title">
-          Job title
+        <label className={LABEL} htmlFor="emp-role">
+          Role
         </label>
-        <input id="emp-title" className={FIELD} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+        {roles.length > 0 ? (
+          <RoleSelect id="emp-role" roles={roles} value={roleId} onChange={setRoleId} />
+        ) : (
+          <div className="py-1 text-sm">{agent.jobTitle}</div>
+        )}
+        {!agent.roleId && roles.length > 0 && (
+          <p className="mt-1 text-[11px] text-muted">Currently a hand-typed title: {agent.jobTitle}. Pick a role to replace it.</p>
+        )}
       </div>
       <div>
         <label className={LABEL} htmlFor="emp-boss">
@@ -366,15 +381,19 @@ function JobPanel({ agent, jobs }: { agent: Agent; jobs: Job[] }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        save({ name: agent.name, jobDescription, successfulDay: splitLines(successfulDay) });
+        save({ name: agent.name, successfulDay: splitLines(successfulDay), ...(agent.roleId ? {} : { jobDescription }) });
       }}
       className="flex flex-col gap-4"
     >
       <div>
         <label className={LABEL} htmlFor="emp-desc">
-          Job description (a description, not a command)
+          Job description {agent.roleId ? `(from the ${agent.jobTitle} role)` : "(a description, not a command)"}
         </label>
-        <textarea id="emp-desc" rows={4} className={`${FIELD} resize-y`} value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} />
+        {agent.roleId ? (
+          <p id="emp-desc" className="py-1 text-sm text-muted">{agent.jobDescription}</p>
+        ) : (
+          <textarea id="emp-desc" rows={4} className={`${FIELD} resize-y`} value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} />
+        )}
       </div>
       <div>
         <label className={LABEL} htmlFor="emp-day">
