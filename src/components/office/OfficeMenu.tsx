@@ -1,7 +1,7 @@
 "use client";
 
 // Hamburger menu in the office's top-left corner. Office-level actions live
-// here; the first (and for now only) one is hiring.
+// here: the Employees dialog (view, edit, fire, hire).
 import { useEffect, useRef, useState } from "react";
 
 export interface MenuItem {

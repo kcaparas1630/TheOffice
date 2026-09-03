@@ -9,6 +9,7 @@ import Markdown from "react-markdown";
 import { api } from "@/server/convex/_generated/api";
 import type { Id } from "@/server/convex/_generated/dataModel";
 import { parseInput } from "@/lib/mentions";
+import { helpText } from "@/lib/commands";
 import { timeAgo } from "@/lib/time";
 import type { Snapshot } from "@/components/office/OfficeCanvas";
 import { Composer } from "./Composer";
@@ -24,15 +25,6 @@ interface Notice {
   tone: "info" | "error";
   at: number;
 }
-
-const HELP = [
-  "@Name message — talk to someone (their real work state is in the answer)",
-  "/task Name what to do — assign work; team leads decide whether to delegate",
-  "/run Name [job title] — run a standing job now",
-  "/redo Name critique — revise their latest document; the critique becomes a lesson",
-  "/email Name — email their latest document to the CEO",
-  "/hire, /assign, /feeds, /fire, /supervisor live in the terminal: npm run office",
-].join("\n");
 
 export function ChatPane({
   snapshot,
@@ -90,7 +82,7 @@ export function ChatPane({
     try {
       switch (command) {
         case "help":
-          notice(HELP);
+          notice(helpText());
           break;
         case "task": {
           if (!text) return notice("Usage: /task Name what to do", null, "error");
@@ -132,7 +124,7 @@ export function ChatPane({
       if (!target) return notice(`Nobody named "${parsed.agentName}" works here.`, null, "error");
       return talk(target, parsed.message);
     }
-    if (!selectedName) return notice("Hire someone first: npm run office → /hire", null, "error");
+    if (!selectedName) return notice("Hire someone first: menu (top-left) → Hire a new employee", null, "error");
     return talk(selectedName, parsed.raw);
   };
 
@@ -213,8 +205,9 @@ export function ChatPane({
 
       <Composer
         roster={names}
+        selectedName={selectedName}
         busy={false}
-        placeholder={selectedName ? `Message ${selectedName}… (or @Name, /task, /run)` : "Hire someone in the terminal first"}
+        placeholder={selectedName ? `Message ${selectedName}… (or @Name, / for commands)` : "Hire someone from the menu first"}
         onSubmit={submit}
       />
     </aside>

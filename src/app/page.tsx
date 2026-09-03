@@ -8,14 +8,14 @@ import { api } from "@/server/convex/_generated/api";
 import { OfficeCanvas } from "@/components/office/OfficeCanvas";
 import { ActivityStrip } from "@/components/office/ActivityStrip";
 import { OfficeMenu } from "@/components/office/OfficeMenu";
-import { HireDialog } from "@/components/office/HireDialog";
+import { EmployeesDialog, type EmployeesTab } from "@/components/office/EmployeesDialog";
 import { ChatPane, type PaneView } from "@/components/chat/ChatPane";
 
 export default function Home() {
   const snapshot = useQuery(api.office.snapshot);
   const [chosenName, setSelectedName] = useState<string | null>(null);
   const [view, setView] = useState<PaneView>({ tab: "chat" });
-  const [hiring, setHiring] = useState(false);
+  const [employees, setEmployees] = useState<EmployeesTab | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export default function Home() {
     <div className="grid h-dvh grid-cols-[minmax(0,1fr)_minmax(22rem,30rem)]">
       <main className="flex min-h-0 flex-col">
         <div className="relative min-h-0 flex-1">
-          <OfficeMenu items={[{ label: "Hire a new employee", onSelect: () => setHiring(true) }]} />
+          <OfficeMenu items={[{ label: "Employees", onSelect: () => setEmployees("profile") }]} />
           <OfficeCanvas snapshot={snapshot} selectedId={selectedId} onSelect={selectById} />
         </div>
         <ActivityStrip
@@ -49,12 +49,15 @@ export default function Home() {
           onSelectAgent={selectById}
         />
       </main>
-      {hiring && (
-        <HireDialog
+      {employees && (
+        <EmployeesDialog
           roster={snapshot?.agents ?? []}
-          onClose={() => setHiring(false)}
-          onHired={(name) => {
-            setHiring(false);
+          jobs={snapshot?.jobs ?? []}
+          now={now}
+          initialName={selectedName}
+          initialTab={employees}
+          onClose={() => setEmployees(null)}
+          onSelectName={(name) => {
             setSelectedName(name);
             setView({ tab: "chat" });
           }}

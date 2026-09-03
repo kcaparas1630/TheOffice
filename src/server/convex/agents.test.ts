@@ -53,6 +53,36 @@ describe("agents.hire", () => {
     expect(edna?.sprite).toBe("c04");
   });
 
+  test("update edits only the fields given and keeps the one-level rule", async () => {
+    const office = t();
+    await office.mutation(api.agents.hire, ednaProfile);
+    await office.mutation(api.agents.hire, { ...ednaProfile, name: "Milton", jobTitle: "Analyst" });
+
+    await office.mutation(api.agents.update, {
+      name: "edna",
+      jobTitle: "  Chief Technology Officer ",
+      traits: ["Jolly"],
+      supervisorName: "Milton",
+    });
+    let edna = await office.query(api.agents.getByName, { name: "Edna" });
+    expect(edna?.jobTitle).toBe("Chief Technology Officer");
+    expect(edna?.personality).toEqual({ traits: ["jolly"], notes: "Dry, no filler." });
+    expect(edna?.jobDescription).toBe(ednaProfile.jobDescription);
+    expect(edna?.supervisorId).toBeDefined();
+
+    // Milton now reports to Edna? No: Edna reports to Milton, so no chains.
+    await expect(
+      office.mutation(api.agents.update, { name: "Milton", supervisorName: "Edna" })
+    ).rejects.toThrow(/no chains/);
+    await expect(office.mutation(api.agents.update, { name: "Edna", successfulDay: [" "] })).rejects.toThrow(
+      /successful day/
+    );
+
+    await office.mutation(api.agents.update, { name: "Edna", supervisorName: "" });
+    edna = await office.query(api.agents.getByName, { name: "Edna" });
+    expect(edna?.supervisorId).toBeUndefined();
+  });
+
   test("rejects duplicate names case-insensitively", async () => {
     const office = t();
     await office.mutation(api.agents.hire, ednaProfile);

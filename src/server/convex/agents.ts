@@ -95,6 +95,70 @@ export const assignSupervisor = mutation({
   },
 });
 
+// Edit an employee's profile. Only the fields given change; the name is their
+// @handle and stays. `supervisorName: ""` clears the supervisor.
+export const update = mutation({
+  args: {
+    name: v.string(),
+    jobTitle: v.optional(v.string()),
+    jobDescription: v.optional(v.string()),
+    successfulDay: v.optional(v.array(v.string())),
+    traits: v.optional(v.array(v.string())),
+    notes: v.optional(v.string()),
+    supervisorName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const agent = await findByName(ctx, args.name);
+    if (!agent) throw new Error(`Nobody named "${args.name}" works here.`);
+    const patch: Partial<{
+      jobTitle: string;
+      jobDescription: string;
+      successfulDay: string[];
+      personality: { traits: string[]; notes: string };
+      supervisorId: Id<"agents"> | undefined;
+    }> = {};
+
+    if (args.jobTitle !== undefined) {
+      if (!args.jobTitle.trim()) throw new Error("Job title is required.");
+      patch.jobTitle = args.jobTitle.trim();
+    }
+    if (args.jobDescription !== undefined) {
+      if (!args.jobDescription.trim()) throw new Error("Job description is required.");
+      patch.jobDescription = args.jobDescription.trim();
+    }
+    if (args.successfulDay !== undefined) {
+      const day = args.successfulDay.map((s) => s.trim()).filter(Boolean);
+      if (day.length === 0) throw new Error("Describe at least one item of a successful day.");
+      patch.successfulDay = day;
+    }
+    if (args.traits !== undefined || args.notes !== undefined) {
+      patch.personality = {
+        traits:
+          args.traits !== undefined
+            ? args.traits.map((t) => t.trim().toLowerCase()).filter(Boolean)
+            : agent.personality.traits,
+        notes: args.notes !== undefined ? args.notes.trim() : agent.personality.notes,
+      };
+    }
+    if (args.supervisorName !== undefined) {
+      if (!args.supervisorName.trim()) {
+        patch.supervisorId = undefined;
+      } else {
+        const supervisor = await findByName(ctx, args.supervisorName);
+        if (!supervisor) throw new Error(`Supervisor "${args.supervisorName}" not found.`);
+        if (supervisor._id === agent._id) throw new Error("An agent cannot supervise themselves.");
+        if (supervisor.supervisorId === agent._id) {
+          throw new Error(`${supervisor.name} already reports to ${agent.name}; no chains allowed.`);
+        }
+        patch.supervisorId = supervisor._id;
+      }
+    }
+
+    await ctx.db.patch(agent._id, patch);
+    return { name: agent.name };
+  },
+});
+
 // Change an agent's look in the pixel office; omit `sprite` to go back to auto.
 export const setSprite = mutation({
   args: { name: v.string(), sprite: v.optional(v.string()) },
