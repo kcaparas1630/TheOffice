@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { buildSystemPrompt, type AgentProfile } from "./prompts";
 
-export type AssignedBy = { role: "supervisor"; name: string } | { role: "ceo" };
+export type AssignedBy = { role: "supervisor"; name: string } | { role: "ceo" } | { role: "self" };
 
 export function buildTaskPrompt(args: {
   worker: AgentProfile;
@@ -12,7 +12,9 @@ export function buildTaskPrompt(args: {
   const assignmentLine =
     args.assignedBy.role === "supervisor"
       ? `${args.assignedBy.name}, your supervisor, has delegated a task to you on behalf of the CEO.`
-      : `The CEO has assigned a task to you directly.`;
+      : args.assignedBy.role === "self"
+        ? `You picked this up yourself on your turn, as one of your duties.`
+        : `The CEO has assigned a task to you directly.`;
   const system = [
     buildSystemPrompt(args.worker),
     ``,

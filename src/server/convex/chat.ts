@@ -72,7 +72,24 @@ export const timeline = query({
       createdAt: number;
       order: number;
       stepOrder: number;
+      toName: string | null; // colleague notes and reports to Kent ("you")
     }[] = [];
+    const nameOf = new Map(agents.map((a) => [a._id, a.name]));
+    const notes = await ctx.db.query("messages").order("desc").take(TIMELINE_MAX);
+    for (const n of notes) {
+      all.push({
+        _id: n._id,
+        agentId: n.fromAgentId,
+        agentName: nameOf.get(n.fromAgentId) ?? "?",
+        role: n.toAgentId ? "colleague" : "report",
+        text: n.text,
+        status: "success",
+        createdAt: n._creationTime,
+        order: 0,
+        stepOrder: 0,
+        toName: n.toAgentId ? (nameOf.get(n.toAgentId) ?? "?") : "you",
+      });
+    }
     for (const agent of agents) {
       if (!agent.chatThreadId) continue;
       const result = await listMessages(ctx, components.agent, {
@@ -92,6 +109,7 @@ export const timeline = query({
           createdAt: m._creationTime,
           order: m.order,
           stepOrder: m.stepOrder,
+          toName: null,
         });
       }
     }

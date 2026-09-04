@@ -53,7 +53,7 @@ async function scorecardFor(ctx: QueryCtx, agentId: Id<"agents">, metrics: RoleM
   return scoreMetrics(metrics, values);
 }
 
-async function collectState(ctx: QueryCtx, agentId: Id<"agents">): Promise<WorkState | null> {
+export async function collectState(ctx: QueryCtx, agentId: Id<"agents">): Promise<WorkState | null> {
   const agent = await ctx.db.get(agentId);
   if (!agent) return null;
 

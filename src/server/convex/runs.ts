@@ -9,7 +9,7 @@ export const startRun = internalMutation({
   args: {
     agentId: v.id("agents"),
     jobId: v.optional(v.id("jobs")),
-    trigger: v.union(v.literal("schedule"), v.literal("chat"), v.literal("delegation")),
+    trigger: v.union(v.literal("schedule"), v.literal("chat"), v.literal("delegation"), v.literal("heartbeat")),
     parentRunId: v.optional(v.id("runs")),
     task: v.optional(v.string()),
   },

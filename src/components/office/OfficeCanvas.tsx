@@ -19,6 +19,7 @@ import {
   type Behavior,
   type Point,
 } from "@/lib/office/sim";
+import { DEFAULT_TIME_ZONE, phaseAt } from "@/lib/clock";
 import { defaultSpriteFor, isSpriteId } from "@/lib/office/sprites";
 import { isBlockedCell } from "@/lib/office/nav";
 import { drawSeated, drawSprite, loadScene, loadSprites, spriteWidth, type SpriteLibrary } from "./sprites";
@@ -192,7 +193,7 @@ export function OfficeCanvas({
           desired = seat;
           person.waitUntil = now + 6000 + Math.random() * 6000;
         } else if (person.path.length === 0 && now >= person.waitUntil) {
-          desired = pickIdleSpot(seat, person.target.id);
+          desired = pickIdleSpot(seat, person.target.id, Math.random, phaseAt(Date.now(), snapRef.current?.timeZone ?? DEFAULT_TIME_ZONE));
           person.waitUntil = Number.POSITIVE_INFINITY; // set again on arrival
         }
         person.mode = behavior.kind;

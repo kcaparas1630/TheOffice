@@ -3,7 +3,7 @@
 // Two panes, per the spec: [Office] | [Chat]. Everything on screen is a
 // reactive view of the same Convex records the terminal uses.
 import { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/server/convex/_generated/api";
 import { OfficeCanvas } from "@/components/office/OfficeCanvas";
 import { ActivityStrip } from "@/components/office/ActivityStrip";
@@ -19,6 +19,7 @@ export default function Home() {
   const [view, setView] = useState<PaneView>({ tab: "chat" });
   const [employees, setEmployees] = useState<EmployeesTab | null>(null);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const updateSettings = useMutation(api.settings.update);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -48,6 +49,10 @@ export default function Home() {
               { label: "Employees", onSelect: () => setEmployees("profile") },
               { label: "Roles", onSelect: () => setRolesOpen(true) },
               { label: "Skills", onSelect: () => setSkillsOpen(true) },
+              {
+                label: snapshot?.heartbeat === false ? "Resume the office" : "Pause the office",
+                onSelect: () => updateSettings({ heartbeat: snapshot?.heartbeat === false }),
+              },
             ]}
           />
           <OfficeCanvas snapshot={snapshot} selectedId={selectedId} onSelect={selectById} />

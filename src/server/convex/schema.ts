@@ -72,6 +72,7 @@ export default defineSchema({
     supervisorId: v.optional(v.id("agents")), // set when this agent reports to another
     sprite: v.optional(v.string()), // chosen look (see src/lib/office/sprites.ts); absent = auto
     status: v.union(v.literal("idle"), v.literal("working")),
+    lastTurnAt: v.optional(v.number()), // when the heartbeat last gave them a turn
     chatThreadId: v.optional(v.string()), // @convex-dev/agent thread for this agent's chat
     // future: per-agent provider/model config
   }).index("by_name", ["name"]),
@@ -93,7 +94,12 @@ export default defineSchema({
     jobId: v.optional(v.id("jobs")),
     agentId: v.id("agents"),
     parentRunId: v.optional(v.id("runs")), // delegation = child run, one level max
-    trigger: v.union(v.literal("schedule"), v.literal("chat"), v.literal("delegation")),
+    trigger: v.union(
+      v.literal("schedule"),
+      v.literal("chat"),
+      v.literal("delegation"),
+      v.literal("heartbeat") // picked up on their own turn
+    ),
     task: v.optional(v.string()), // what was asked, recorded on the run itself
     skillIds: v.optional(v.array(v.id("skills"))), // skills whose tools this run invoked
     status: v.union(
@@ -108,6 +114,39 @@ export default defineSchema({
     error: v.optional(v.string()),
     costUsd: v.optional(v.number()),
   }).index("by_agent", ["agentId"]),
+
+  // Notes between colleagues, and reports up to Kent (no `toAgentId`).
+  // Written only on a heartbeat turn; read on the recipient's next turn and
+  // shown in the chat stream. Still no inbound channel from the outside.
+  messages: defineTable({
+    fromAgentId: v.id("agents"),
+    toAgentId: v.optional(v.id("agents")),
+    text: v.string(),
+    readAt: v.optional(v.number()),
+    turnId: v.optional(v.id("turns")),
+  })
+    .index("by_to", ["toAgentId"])
+    .index("by_from", ["fromAgentId"]),
+
+  // Every heartbeat turn an agent took and what they chose; the office log.
+  turns: defineTable({
+    agentId: v.id("agents"),
+    at: v.number(),
+    phase: v.string(),
+    action: v.string(), // work | delegate | message | report | rest | failed
+    reason: v.string(),
+    summary: v.string(),
+    runId: v.optional(v.id("runs")),
+    messageId: v.optional(v.id("messages")),
+  }).index("by_agent", ["agentId"]),
+
+  // Office-wide settings, one row keyed "office".
+  settings: defineTable({
+    key: v.string(),
+    heartbeat: v.boolean(), // the office clock gives turns
+    timeZone: v.string(),
+    turnEveryMinutes: v.number(), // per-agent cooldown between turns
+  }).index("by_key", ["key"]),
 
   // Addressable outputs; the knowledge-base seed.
   artifacts: defineTable({

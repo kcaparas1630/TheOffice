@@ -15,7 +15,9 @@ import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
 import type * as delegation from "../delegation.js";
 import type * as email from "../email.js";
+import type * as heartbeat from "../heartbeat.js";
 import type * as jobs from "../jobs.js";
+import type * as messages from "../messages.js";
 import type * as model_agents from "../model/agents.js";
 import type * as model_profile from "../model/profile.js";
 import type * as model_runs from "../model/runs.js";
@@ -23,6 +25,7 @@ import type * as model_skills from "../model/skills.js";
 import type * as office from "../office.js";
 import type * as roles from "../roles.js";
 import type * as runs from "../runs.js";
+import type * as settings from "../settings.js";
 import type * as skills from "../skills.js";
 import type * as work from "../work.js";
 
@@ -40,7 +43,9 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   delegation: typeof delegation;
   email: typeof email;
+  heartbeat: typeof heartbeat;
   jobs: typeof jobs;
+  messages: typeof messages;
   "model/agents": typeof model_agents;
   "model/profile": typeof model_profile;
   "model/runs": typeof model_runs;
@@ -48,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   office: typeof office;
   roles: typeof roles;
   runs: typeof runs;
+  settings: typeof settings;
   skills: typeof skills;
   work: typeof work;
 }>;

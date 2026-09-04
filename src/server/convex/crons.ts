@@ -8,6 +8,10 @@ const crons = cronJobs();
 // DST drift accepted.
 crons.daily("daily jobs", { hourUTC: 15, minuteUTC: 0 }, internal.briefs.runScheduledJobs, {});
 
+// The office heartbeat: during working hours, idle agents get a turn to
+// decide what to do next (src/server/convex/heartbeat.ts).
+crons.interval("office heartbeat", { minutes: 10 }, internal.heartbeat.tick, {});
+
 // Close out runs whose process died before it could report back.
 crons.interval("reap stale runs", { minutes: 15 }, internal.runs.reapStaleRuns, {});
 

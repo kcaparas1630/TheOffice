@@ -4,6 +4,10 @@
 import { DESK_SEATS, IDLE_SPOTS, isSeatId, MANAGER_SEAT, RECEPTION_SEAT, type Facing, type Spot } from "./layout";
 import { centerOf, gridFromRows, isWalkable, nearestOpenCell, planRoute, type NavGrid } from "./nav";
 import { NAV_ROWS } from "./navmask";
+import type { Phase } from "../clock";
+
+// Where people go when the clock says lunch or break: never their desk.
+const SOCIAL_SPOT_IDS = new Set(["cafe", "break-table", "kitchen", "lounge"]);
 
 export interface SnapAgent {
   _id: string;
@@ -99,7 +103,13 @@ export function standBeside(worker: Spot): Spot {
   return { id: `beside-${worker.id}`, x: worker.x + dx, y: worker.y, facing };
 }
 
-export function pickIdleSpot(seat: Spot, current: string | null, random = Math.random): Spot {
+export function pickIdleSpot(seat: Spot, current: string | null, random = Math.random, phase: Phase = "work"): Spot {
+  if (phase === "lunch" || phase === "break") {
+    // Off the clock: the social spots only, and stay put once there.
+    if (current && SOCIAL_SPOT_IDS.has(current)) return IDLE_SPOTS.find((s) => s.id === current) ?? seat;
+    const social = IDLE_SPOTS.filter((s) => SOCIAL_SPOT_IDS.has(s.id));
+    return social[Math.floor(random() * social.length)];
+  }
   // Mostly drift back to your own desk; sometimes wander.
   if (current !== seat.id && random() < 0.4) return seat;
   const options = IDLE_SPOTS.filter((s) => s.id !== current);

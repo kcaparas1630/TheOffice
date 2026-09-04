@@ -2,9 +2,11 @@
 // documents. The pixel office animates directly off these records (spec
 // principle #5) — nothing here is prose, and the client never invents state.
 import { query } from "./_generated/server";
+import { officeSettings } from "./settings";
 
 const RECENT_RUNS = 40;
 const RECENT_ARTIFACTS = 30;
+const RECENT_TURNS = 12;
 
 export const snapshot = query({
   args: {},
@@ -12,6 +14,8 @@ export const snapshot = query({
     const agents = await ctx.db.query("agents").collect();
     const runs = await ctx.db.query("runs").order("desc").take(RECENT_RUNS);
     const artifacts = await ctx.db.query("artifacts").order("desc").take(RECENT_ARTIFACTS);
+    const turns = await ctx.db.query("turns").order("desc").take(RECENT_TURNS);
+    const settings = await officeSettings(ctx);
     const jobs = await ctx.db.query("jobs").collect();
     const roles = await ctx.db.query("roles").collect();
     const holds = await ctx.db.query("agentSkills").collect();
@@ -22,6 +26,18 @@ export const snapshot = query({
     const agentName = new Map(agents.map((a) => [a._id, a.name]));
 
     return {
+      timeZone: settings.timeZone,
+      heartbeat: settings.heartbeat,
+      turns: turns.map((t) => ({
+        _id: t._id,
+        agentId: t.agentId,
+        agentName: agentName.get(t.agentId) ?? "?",
+        at: t.at,
+        phase: t.phase,
+        action: t.action,
+        summary: t.summary,
+        runId: t.runId ?? null,
+      })),
       agents: agents.map((a) => ({
         _id: a._id,
         name: a.name,

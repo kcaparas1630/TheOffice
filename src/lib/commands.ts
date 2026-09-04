@@ -45,6 +45,14 @@ export const WEB_COMMANDS: CommandSpec[] = [
     hasText: false,
   },
   {
+    name: "turn",
+    usage: "/turn Name",
+    description: "Give them a turn now: they read their scorecard and inbox and pick a duty, or rest.",
+    example: "/turn Hazel",
+    needsAgent: true,
+    hasText: false,
+  },
+  {
     name: "help",
     usage: "/help",
     description: "List these commands in the thread.",

@@ -54,6 +54,7 @@ export function ChatPane({
   const emailLatest = useAction(api.email.emailLatest);
   const dispatchTask = useMutation(api.delegation.dispatchTask);
   const dispatchJob = useMutation(api.briefs.dispatchJobNow);
+  const giveTurn = useMutation(api.heartbeat.giveTurn);
 
   const notice = (text: string, agent: string | null = null, tone: Notice["tone"] = "info") =>
     setNotices((n) => [...n.slice(-49), { id: Date.now() + Math.random(), agent, text, tone, at: Date.now() }]);
@@ -76,7 +77,7 @@ export function ChatPane({
   const runCommand = async (command: string, args: string[]) => {
     const [first, ...rest] = args;
     const target = first ? resolve(first) : null;
-    const needsAgent = ["task", "run", "redo", "email"].includes(command);
+    const needsAgent = ["task", "run", "redo", "email", "turn"].includes(command);
     if (needsAgent && !target) {
       notice(first ? `Nobody named "${first}" works here.` : `Usage: /${command} Name …`, null, "error");
       return;
@@ -108,6 +109,11 @@ export function ChatPane({
         case "email": {
           const r = await emailLatest({ agentName: target! });
           notice(JSON.stringify(r), target);
+          break;
+        }
+        case "turn": {
+          const r = await giveTurn({ agentName: target! });
+          notice(`${r.agent} is taking a turn: reading their scorecard and inbox, then choosing what to do.`, target);
           break;
         }
         default:
@@ -191,7 +197,7 @@ export function ChatPane({
 }
 
 type Item =
-  | { kind: "message"; id: string; agent: string; role: string; text: string; at: number; pending?: boolean }
+  | { kind: "message"; id: string; agent: string; role: string; text: string; at: number; pending?: boolean; toName?: string | null }
   | { kind: "notice"; id: string; agent: string | null; text: string; tone: Notice["tone"]; at: number };
 
 function Stream({
@@ -218,6 +224,7 @@ function Stream({
       role: m.role,
       text: m.text,
       at: m.createdAt,
+      toName: m.toName,
     })),
     ...notices.map<Item>((n) => ({ kind: "notice", id: String(n.id), agent: n.agent, text: n.text, tone: n.tone, at: n.at })),
   ].sort((a, b) => a.at - b.at);
@@ -284,6 +291,17 @@ function Stream({
                   <span className="text-[13px] font-bold tracking-wide" style={{ color }}>
                     {item.agent}
                   </span>
+                  {item.toName && (
+                    <>
+                      {" → "}
+                      <span
+                        className={item.toName === "you" ? "font-semibold text-foreground" : "font-semibold"}
+                        style={item.toName === "you" ? undefined : { color: colorOf(item.toName) }}
+                      >
+                        {item.toName}
+                      </span>
+                    </>
+                  )}
                   {" · "}
                   {timeAgo(item.at, now)}
                 </div>

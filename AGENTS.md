@@ -25,7 +25,8 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
   - `roles.ts` — roles defined once (title, description, department, reports-to role, **duties**, **metrics**); `seed` = the org that runs the company from `src/lib/orgSeed.ts` (8 departments incl. Finance and People & Wellbeing, 15 roles; idempotent, backfills duties/metrics on existing roles); agents copy title/description from their role and are re-synced on edit; duties/metrics are read from the role at prompt time (`model/profile.ts` → `withProfile`)
   - `agents.ts` / `jobs.ts` — CRUD for the cast and their standing jobs (`hire`/`update` take a `roleId` or free text)
   - `skills.ts` — the skills catalogue (`list`/`get`/`create`/`update`/`remove`), who holds what at which level (`assign`/`unassign`/`forAgent`), `importFromSmithery` (registry API, `SMITHERY_API_KEY`), `seed` (the office's own all-sector catalogue from `src/lib/skillSeed.ts`: finance, planning, social, emotional, research, coding, operations…; idempotent), `upsertBatch`; prompt text lives in `skillPrompts`; `model/skills.ts` = `withSkills` (agent + skills for prompts) and `bumpSkillUses` (called from `runs.finishRun` with the run's `skillIds`)
-  - `runs.ts` — run + artifact lifecycle (internal); every unit of work goes through it
+  - `runs.ts` — run + artifact lifecycle (internal); every unit of work goes through it (`reapStaleRuns` cron closes stranded runs)
+  - `heartbeat.ts` — the office clock: `tick` (cron every 10 min; during work hours per `src/lib/clock.ts`, idle agents past their cooldown get a turn, max 2 per tick), `takeTurn` (decide with `src/server/vercel/turns.ts` → work / delegate / message / report / rest; every turn is a `turns` row), `giveTurn` (`/turn Name`); `settings.ts` (heartbeat on/off, time zone, cooldown); `messages.ts` (colleague notes + reports to Kent; read on the recipient's next turn; shown in the chat stream as "Hazel → Milton")
   - `briefs.ts` — the brief pipeline: feeds → generateObject → artifact, cron entry, revisions
   - `delegation.ts` — task routing (supervisor decides), delegation, report-backs
   - `artifacts.ts` — reading documents (/docs, /read, email lookups, web `byId` with version chain)
@@ -46,7 +47,8 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
 - **Status answers come from injected work state only** (runs/jobs/artifacts). Never let the LLM invent progress.
 - **The office animates off records.** Sprite behavior (working / delegating / idle) is derived in `src/lib/office/sim.ts` from run rows; nothing on screen is inferred from prose. Walks are planned over the walkability grid (`nav.ts`), never through walls or furniture; `?nav` on the web URL (dev only) overlays blocked cells and planned paths.
 - **Records drive prose, never the reverse.** Delegation is structured child runs (`delegation.ts`), one level max — enforced in `startRun`.
-- **No inbound channels.** Send-only email later; agents never read inboxes.
+- **No inbound channels.** Send-only email later; agents never read outside inboxes. Colleague notes (`messages`) are internal records written only on a heartbeat turn.
+- **Agents decide on their turn, Kent does not schedule them.** The heartbeat is plumbing: a turn shows the agent its duties, scorecard, inbox and colleagues, and it picks one action. Duties give the options; metrics that are "behind" give the reason. Malformed decisions become a recorded rest, never a guess.
 
 ## Commands
 

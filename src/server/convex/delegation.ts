@@ -50,18 +50,19 @@ export const agentWithReports = internalQuery({
 
 // Shared execution: run the task as `agent`, produce the report artifact,
 // close the run. Returns the artifact for the caller to link further records.
-async function performTask(
+export async function performTask(
   ctx: ActionCtx,
   args: {
     agent: Doc<"agents">;
     task: string;
     assignedBy: AssignedBy;
     parentRunId?: Id<"runs">;
+    trigger?: "chat" | "heartbeat";
   }
 ): Promise<{ artifactId: Id<"artifacts">; title: string; runId: Id<"runs">; contentMd: string }> {
   const runId: Id<"runs"> = await ctx.runMutation(internal.runs.startRun, {
     agentId: args.agent._id,
-    trigger: args.parentRunId ? "delegation" : "chat",
+    trigger: args.parentRunId ? "delegation" : (args.trigger ?? "chat"),
     parentRunId: args.parentRunId,
     task: args.task,
   });
