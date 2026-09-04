@@ -221,7 +221,14 @@ function Stream({
     })),
     ...notices.map<Item>((n) => ({ kind: "notice", id: String(n.id), agent: n.agent, text: n.text, tone: n.tone, at: n.at })),
   ].sort((a, b) => a.at - b.at);
-  if (pending) {
+  // The draft shows as "sending" only until the thread has stored it; the
+  // reply takes longer, so the pending state outlives the message itself.
+  const stored =
+    pending &&
+    (messages ?? []).some(
+      (m) => m.role === "user" && m.agentName === pending.agent && m.text.trim() === pending.text.trim()
+    );
+  if (pending && !stored) {
     items.push({ kind: "message", id: "pending", agent: pending.agent, role: "user", text: pending.text, at: now, pending: true });
   }
 

@@ -1,7 +1,8 @@
 "use client";
 
-// Message box with two pickers: `@` suggests people, and clicking into an
-// empty box (or typing `/`) suggests commands with a runnable example each.
+// Message box with two pickers: `@` suggests people and `/` suggests
+// commands with a runnable example each. Nothing opens on focus or click
+// unless the draft already starts with `/` or ends in an `@`.
 // Enter sends, Shift+Enter breaks the line; while a picker is open, ↑↓ move
 // (hover does too) and Tab/Enter accept. A "to" chip shows who a plain
 // message goes to.
@@ -48,8 +49,8 @@ export function Composer({
       }
     }
     const command = text.match(COMMAND_RE);
-    if (command || text === "") {
-      const matches = matchCommands(command?.[1] ?? "");
+    if (command) {
+      const matches = matchCommands(command[1]);
       if (matches.length > 0) return setPicker({ kind: "command", matches, index: 0 });
     }
     setPicker(null);
