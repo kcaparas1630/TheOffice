@@ -17,6 +17,7 @@ import type * as delegation from "../delegation.js";
 import type * as email from "../email.js";
 import type * as jobs from "../jobs.js";
 import type * as model_agents from "../model/agents.js";
+import type * as model_profile from "../model/profile.js";
 import type * as model_runs from "../model/runs.js";
 import type * as model_skills from "../model/skills.js";
 import type * as office from "../office.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   email: typeof email;
   jobs: typeof jobs;
   "model/agents": typeof model_agents;
+  "model/profile": typeof model_profile;
   "model/runs": typeof model_runs;
   "model/skills": typeof model_skills;
   office: typeof office;

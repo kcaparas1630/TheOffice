@@ -10,6 +10,12 @@ export default defineSchema({
     roleDescription: v.string(), // a description of the job, not a command
     department: v.optional(v.string()), // "Front desk", "Sales", …
     supervisorId: v.optional(v.id("roles")), // the role this one reports to
+    duties: v.optional(v.array(v.string())), // what the holder does on a turn
+    // A successful week, scored from records (src/lib/metrics.ts): each line
+    // names the measure the office counts; "manual" = not tracked yet.
+    metrics: v.optional(
+      v.array(v.object({ statement: v.string(), target: v.number(), unit: v.string(), measure: v.string() }))
+    ),
   }).index("by_name", ["roleName"]),
 
   // The skills catalogue: imported from Smithery's registry or hand-made.

@@ -6,6 +6,15 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { ORG_SEED } from "../../lib/orgSeed";
+import { isMeasureId, type RoleMetric } from "../../lib/metrics";
+
+const metricValidator = v.object({
+  statement: v.string(),
+  target: v.number(),
+  unit: v.string(),
+  measure: v.string(),
+});
 
 export async function findRoleByName(ctx: QueryCtx, name: string): Promise<Doc<"roles"> | null> {
   const target = name.trim().toLowerCase();
@@ -37,6 +46,8 @@ export const list = query({
         department: r.department ?? null,
         supervisorId: r.supervisorId ?? null,
         supervisorName: r.supervisorId ? (byId.get(r.supervisorId)?.roleName ?? null) : null,
+        duties: r.duties ?? [],
+        metrics: r.metrics ?? [],
         createdAt: r._creationTime,
         holders: agents.filter((a) => a.roleId === r._id).map((a) => a.name),
       }))
@@ -50,6 +61,8 @@ export const create = mutation({
     roleDescription: v.string(),
     department: v.optional(v.string()),
     supervisorId: v.optional(v.id("roles")),
+    duties: v.optional(v.array(v.string())),
+    metrics: v.optional(v.array(metricValidator)),
   },
   handler: async (ctx, args) => {
     const roleName = args.roleName.trim();
@@ -62,6 +75,8 @@ export const create = mutation({
       roleDescription: args.roleDescription.trim(),
       department: args.department?.trim() || undefined,
       supervisorId: args.supervisorId,
+      duties: cleanList(args.duties),
+      metrics: cleanMetrics(args.metrics),
     });
     return { roleId, roleName };
   },
@@ -75,6 +90,8 @@ export const update = mutation({
     department: v.optional(v.string()),
     // "" clears the supervisor.
     supervisorId: v.optional(v.union(v.id("roles"), v.literal(""))),
+    duties: v.optional(v.array(v.string())),
+    metrics: v.optional(v.array(metricValidator)),
   },
   handler: async (ctx, args) => {
     const role = await ctx.db.get(args.roleId);
@@ -92,6 +109,8 @@ export const update = mutation({
       patch.roleDescription = args.roleDescription.trim();
     }
     if (args.department !== undefined) patch.department = args.department.trim() || undefined;
+    if (args.duties !== undefined) patch.duties = cleanList(args.duties);
+    if (args.metrics !== undefined) patch.metrics = cleanMetrics(args.metrics);
     if (args.supervisorId !== undefined) {
       if (args.supervisorId === "") {
         patch.supervisorId = undefined;
@@ -129,98 +148,20 @@ export const remove = mutation({
   },
 });
 
-// A starter org chart across departments. Idempotent: existing names are
-// left alone, so it is safe to run on a live office.
-export const STARTER_ROLES: {
-  roleName: string;
-  department: string;
-  roleDescription: string;
-  reportsTo?: string;
-}[] = [
-  {
-    roleName: "Chief of Staff",
-    department: "Corporate",
-    roleDescription:
-      "Runs the office on the CEO's behalf: keeps every open thread in view, routes work to the right department, surfaces blockers early, and turns scattered updates into short, decision-ready briefs.",
-  },
-  {
-    roleName: "Executive Assistant",
-    department: "Corporate",
-    roleDescription:
-      "Keeps the CEO's day running: schedules, follow-ups, meeting notes and the small logistics that would otherwise slip.",
-    reportsTo: "Chief of Staff",
-  },
-  {
-    roleName: "Receptionist",
-    department: "Front desk",
-    roleDescription:
-      "First point of contact for the office: greets visitors, answers general questions, and routes requests to whoever can actually help.",
-    reportsTo: "Chief of Staff",
-  },
-  {
-    roleName: "Head of IT",
-    department: "IT",
-    roleDescription:
-      "Owns the office's tools and systems: keeps them reliable and secure, evaluates new tech, and explains trade-offs in plain language.",
-    reportsTo: "Chief of Staff",
-  },
-  {
-    roleName: "IT Support Engineer",
-    department: "IT",
-    roleDescription:
-      "Fixes what breaks and documents how: laptops, accounts, access, and the recurring questions that deserve a written answer.",
-    reportsTo: "Head of IT",
-  },
-  {
-    roleName: "Head of Sales",
-    department: "Sales",
-    roleDescription:
-      "Builds and runs the pipeline: qualifies leads, prioritises accounts, and reports honestly on what is moving and what is stuck.",
-    reportsTo: "Chief of Staff",
-  },
-  {
-    roleName: "Account Executive",
-    department: "Sales",
-    roleDescription:
-      "Works deals from first call to close: discovery, proposals, follow-ups, and clean notes on every account.",
-    reportsTo: "Head of Sales",
-  },
-  {
-    roleName: "Head of Marketing",
-    department: "Marketing",
-    roleDescription:
-      "Shapes how the company is seen: positioning, campaigns, and a steady read on what the market is talking about.",
-    reportsTo: "Chief of Staff",
-  },
-  {
-    roleName: "Content Marketer",
-    department: "Marketing",
-    roleDescription:
-      "Writes the words people actually read: posts, newsletters, launch notes, and the research behind them.",
-    reportsTo: "Head of Marketing",
-  },
-  {
-    roleName: "Head of Customer Success",
-    department: "Customer Success",
-    roleDescription:
-      "Makes sure customers get value after they sign: onboarding, health checks, renewals, and escalations that reach the right people.",
-    reportsTo: "Chief of Staff",
-  },
-  {
-    roleName: "Customer Success Manager",
-    department: "Customer Success",
-    roleDescription:
-      "Owns a book of customers: regular check-ins, clear answers to their questions, and early warning when something is off.",
-    reportsTo: "Head of Customer Success",
-  },
-  {
-    roleName: "Researcher",
-    department: "Corporate",
-    roleDescription:
-      "Digs into whatever the office needs to understand next and turns it into clear, sourced, CEO-ready write-ups.",
-    reportsTo: "Chief of Staff",
-  },
-];
+// The org that runs the company (see src/lib/orgSeed.ts). Re-exported so
+// tests and the CLI can count on it.
+export const STARTER_ROLES = ORG_SEED;
+
+const cleanList = (xs: string[] | undefined) => xs?.map((x) => x.trim()).filter(Boolean) ?? [];
+const cleanMetrics = (xs: RoleMetric[] | undefined): RoleMetric[] =>
+  xs
+    ?.map((m) => ({
+      statement: m.statement.trim(),
+      target: Number.isFinite(m.target) ? m.target : 0,
+      unit: m.unit.trim() || "count",
+      measure: isMeasureId(m.measure) ? m.measure : "manual",
+    }))
+    .filter((m) => m.statement) ?? [];
 
 export const seed = mutation({
   args: {},
@@ -228,12 +169,28 @@ export const seed = mutation({
     const created: string[] = [];
     const ids = new Map<string, Id<"roles">>();
     for (const r of await ctx.db.query("roles").collect()) ids.set(r.roleName.toLowerCase(), r._id);
+    const filled: string[] = [];
     for (const r of STARTER_ROLES) {
-      if (ids.has(r.roleName.toLowerCase())) continue;
+      const existingId = ids.get(r.roleName.toLowerCase());
+      if (existingId) {
+        // Keep edits; only fill in what the role does not have yet.
+        const existing = (await ctx.db.get(existingId))!;
+        const patch: Partial<Doc<"roles">> = {};
+        if (!existing.duties?.length) patch.duties = r.duties;
+        if (!existing.metrics?.length) patch.metrics = r.metrics;
+        if (!existing.department) patch.department = r.department;
+        if (Object.keys(patch).length > 0) {
+          await ctx.db.patch(existingId, patch);
+          filled.push(r.roleName);
+        }
+        continue;
+      }
       const id = await ctx.db.insert("roles", {
         roleName: r.roleName,
         roleDescription: r.roleDescription,
         department: r.department,
+        duties: r.duties,
+        metrics: r.metrics,
       });
       ids.set(r.roleName.toLowerCase(), id);
       created.push(r.roleName);
@@ -257,6 +214,6 @@ export const seed = mutation({
       await ctx.db.patch(agent._id, { roleId: id, jobTitle: role.roleName, jobDescription: role.roleDescription });
       adopted.push(`${agent.name} → ${role.roleName}`);
     }
-    return { created, adopted };
+    return { created, adopted, filled };
   },
 });

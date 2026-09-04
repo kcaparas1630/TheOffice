@@ -10,7 +10,7 @@ import { v } from "convex/values";
 import { generateObject, generateText } from "ai";
 import type { Doc, Id } from "./_generated/dataModel";
 import { chatModel, extractCostUsd } from "../vercel/model";
-import { withSkills } from "./model/skills";
+import { withProfile } from "./model/profile";
 import {
   buildTaskPrompt,
   taskTitle,
@@ -34,7 +34,7 @@ export const delegationPair = internalQuery({
           `Set that up first: /supervisor ${worker.name} ${supervisor.name}`
       );
     }
-    return { supervisor: await withSkills(ctx, supervisor), worker: await withSkills(ctx, worker) };
+    return { supervisor: await withProfile(ctx, supervisor), worker: await withProfile(ctx, worker) };
   },
 });
 
@@ -44,7 +44,7 @@ export const agentWithReports = internalQuery({
     const agent = await requireAgentByName(ctx, agentName);
     const agents = await ctx.db.query("agents").collect();
     const reports = agents.filter((a) => a.supervisorId === agent._id);
-    return { agent: await withSkills(ctx, agent), reports };
+    return { agent: await withProfile(ctx, agent), reports };
   },
 });
 

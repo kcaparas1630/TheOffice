@@ -4,9 +4,11 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { STARTER_ROLES } from "./roles";
+import { internal } from "./_generated/api";
+import { DEPARTMENTS } from "../../lib/orgSeed";
 
 const modules = {
-  ...import.meta.glob("./{agents,work,roles,skills}.ts"),
+  ...import.meta.glob("./{agents,work,roles,skills,runs}.ts"),
   ...import.meta.glob("./_generated/**/*.js"),
 };
 
@@ -105,5 +107,84 @@ describe("roles", () => {
     expect(ae?.supervisorName).toBe("Head of Sales");
     const hazel = await office.query(api.agents.getByName, { name: "Hazel" });
     expect(hazel?.jobDescription).not.toBe("typed by hand");
+  });
+});
+
+describe("duties and metrics", () => {
+  test("the seed covers every department with duties and metrics, and backfills roles that lack them", async () => {
+    const office = t();
+    // A hand-made Chief of Staff from before duties existed.
+    const { roleId } = await office.mutation(api.roles.create, {
+      roleName: "Chief of Staff",
+      roleDescription: "My own wording.",
+    });
+    const r = await office.mutation(api.roles.seed, {});
+    expect(r.created).toHaveLength(STARTER_ROLES.length - 1);
+    expect(r.filled).toContain("Chief of Staff");
+
+    const roles = await office.query(api.roles.list, {});
+    const departments = new Set(roles.map((x) => x.department));
+    for (const d of DEPARTMENTS) expect(departments.has(d)).toBe(true);
+    const cos = roles.find((x) => x._id === roleId)!;
+    expect(cos.roleDescription).toBe("My own wording."); // edits are kept
+    expect(cos.department).toBe("Corporate");
+    expect(cos.duties.length).toBeGreaterThan(0);
+    expect(cos.metrics.some((m) => m.measure === "delegations.reported_same_day")).toBe(true);
+    for (const role of roles) {
+      expect(role.duties.length).toBeGreaterThan(0);
+      expect(role.metrics.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("a holder's profile carries the role's duties and metrics, and the scorecard is counted from runs", async () => {
+    const office = t();
+    await office.mutation(api.roles.seed, {});
+    const roles = await office.query(api.roles.list, {});
+    const cos = roles.find((x) => x.roleName === "Chief of Staff")!;
+    const researcher = roles.find((x) => x.roleName === "Researcher")!;
+    const hazel = await office.mutation(api.agents.hire, { ...person, name: "Hazel", roleId: cos._id });
+    const milton = await office.mutation(api.agents.hire, { ...person, name: "Milton", roleId: researcher._id });
+
+    const profile = await office.query(internal.agents.getByNameInternal, { name: "Hazel" });
+    expect(profile?.duties).toEqual(cos.duties);
+    expect(profile?.metrics).toEqual(cos.metrics);
+
+    // Hazel delegates twice; one comes back at once, one is still open after two days.
+    const parent = await office.mutation(internal.runs.startRun, { agentId: hazel.agentId, trigger: "chat" });
+    const quick = await office.mutation(internal.runs.startRun, {
+      agentId: milton.agentId,
+      trigger: "delegation",
+      parentRunId: parent,
+    });
+    const artifactId = await office.mutation(internal.runs.saveArtifact, {
+      agentId: milton.agentId,
+      runId: quick,
+      kind: "note",
+      title: "Back already",
+      contentMd: "done",
+      version: 1,
+      sources: [],
+    });
+    await office.mutation(internal.runs.finishRun, { runId: quick, artifactId });
+    const slow = await office.mutation(internal.runs.startRun, {
+      agentId: milton.agentId,
+      trigger: "delegation",
+      parentRunId: parent,
+    });
+    await office.run(async (ctx) => {
+      await ctx.db.patch(slow, { startedAt: Date.now() - 2 * 86_400_000 });
+    });
+
+    const card = await office.query(api.work.scorecardForAgent, { agentId: hazel.agentId });
+    const by = Object.fromEntries(card!.scorecard.map((m) => [m.measure, m]));
+    expect(by["delegations.reported_same_day"].value).toBe(100);
+    expect(by["delegations.reported_same_day"].met).toBe(true);
+    expect(by["delegations.open_over_day"].value).toBe(1);
+    expect(by["delegations.open_over_day"].met).toBe(false);
+    expect(by["manual"].value).toBeNull();
+
+    // The same numbers reach the prompt's work state.
+    const state = await office.query(api.work.statusForAgent, { agentId: hazel.agentId });
+    expect(state?.scorecard?.some((m) => m.measure === "delegations.open_over_day" && m.value === 1)).toBe(true);
   });
 });

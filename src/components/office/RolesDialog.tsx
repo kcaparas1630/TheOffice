@@ -10,8 +10,15 @@ import { api } from "@/server/convex/_generated/api";
 import type { Id } from "@/server/convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { errorText, FIELD, LABEL } from "./HireForm";
+import { formatMetricLine, MEASURE_IDS, MEASURES, parseMetricLine } from "@/lib/metrics";
 
 type Role = FunctionReturnType<typeof api.roles.list>[number];
+
+const splitLines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+const parseMetrics = (s: string) => splitLines(s).flatMap((l) => {
+  const m = parseMetricLine(l);
+  return m ? [m] : [];
+});
 
 export function RolesDialog({ onClose }: { onClose: () => void }) {
   const roles = useQuery(api.roles.list) ?? [];
@@ -89,9 +96,9 @@ export function RolesDialog({ onClose }: { onClose: () => void }) {
                   try {
                     const r = await seed({});
                     setSeedNote(
-                      r.created.length
-                        ? `Added ${r.created.length} roles${r.adopted.length ? `; ${r.adopted.join(", ")}` : ""}.`
-                        : "Starter roles already present."
+                      r.created.length || r.filled.length
+                        ? `Added ${r.created.length} roles, filled duties/metrics on ${r.filled.length}${r.adopted.length ? `; ${r.adopted.join(", ")}` : ""}.`
+                        : "The org is already in place."
                     );
                   } catch (e) {
                     setSeedNote(errorText(e));
@@ -99,7 +106,7 @@ export function RolesDialog({ onClose }: { onClose: () => void }) {
                 }}
                 className="text-muted hover:text-foreground hover:underline"
               >
-                Add the starter departments
+                Add the org that runs the company
               </button>
               {seedNote && <p className="mt-1 text-muted">{seedNote}</p>}
             </div>
@@ -141,9 +148,10 @@ function RoleFields({
 }: {
   roles: Role[];
   self: Id<"roles"> | null;
-  values: { roleName: string; roleDescription: string; department: string; supervisorId: string };
+  values: { roleName: string; roleDescription: string; department: string; supervisorId: string; duties: string; metrics: string };
   onChange: (next: typeof values) => void;
 }) {
+  const [showMeasures, setShowMeasures] = useState(false);
   const set = (patch: Partial<typeof values>) => onChange({ ...values, ...patch });
   const departments = [...new Set(roles.map((r) => r.department).filter(Boolean))] as string[];
   return (
@@ -187,6 +195,45 @@ function RoleFields({
         />
       </div>
       <div>
+        <label className={LABEL} htmlFor="role-duties">
+          Duties (what the holder does on a turn, one per line)
+        </label>
+        <textarea
+          id="role-duties"
+          rows={5}
+          className={`${FIELD} resize-y`}
+          value={values.duties}
+          onChange={(e) => set({ duties: e.target.value })}
+          placeholder={"Run the staff: check every delegated task is reported back the same day.\nWeekly review: what got done, what slipped, what changes."}
+        />
+      </div>
+      <div>
+        <label className={LABEL} htmlFor="role-metrics">
+          A successful week, measured (one per line: statement | target unit | measure)
+        </label>
+        <textarea
+          id="role-metrics"
+          rows={5}
+          className={`${FIELD} resize-y font-mono text-xs`}
+          value={values.metrics}
+          onChange={(e) => set({ metrics: e.target.value })}
+          placeholder={"Every task I delegate is reported back within a day | 100 % | delegations.reported_same_day\nDocuments delivered | 3 count | artifacts.delivered"}
+        />
+        <button type="button" onClick={() => setShowMeasures((v) => !v)} className="mt-1 text-[10px] font-mono text-muted hover:underline">
+          {showMeasures ? "hide measures" : "what can be measured?"}
+        </button>
+        {showMeasures && (
+          <ul className="mt-1 space-y-0.5 text-[10px] text-muted">
+            {MEASURE_IDS.map((id) => (
+              <li key={id}>
+                <span className="font-mono text-foreground">{id}</span> — {MEASURES[id].how}
+              </li>
+            ))}
+            <li>Anything else is not tracked yet: write it down with the measure left blank and it shows as such, never scored by the agent.</li>
+          </ul>
+        )}
+      </div>
+      <div>
         <label className={LABEL} htmlFor="role-boss">
           Reports to
         </label>
@@ -208,7 +255,7 @@ function RoleFields({
 
 function NewRole({ roles, onCreated }: { roles: Role[]; onCreated: (id: Id<"roles">) => void }) {
   const create = useMutation(api.roles.create);
-  const [values, setValues] = useState({ roleName: "", roleDescription: "", department: "", supervisorId: "" });
+  const [values, setValues] = useState({ roleName: "", roleDescription: "", department: "", supervisorId: "", duties: "", metrics: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return (
@@ -223,6 +270,8 @@ function NewRole({ roles, onCreated }: { roles: Role[]; onCreated: (id: Id<"role
             roleDescription: values.roleDescription,
             department: values.department || undefined,
             supervisorId: values.supervisorId ? (values.supervisorId as Id<"roles">) : undefined,
+            duties: splitLines(values.duties),
+            metrics: parseMetrics(values.metrics),
           });
           onCreated(r.roleId);
         } catch (err) {
@@ -234,7 +283,7 @@ function NewRole({ roles, onCreated }: { roles: Role[]; onCreated: (id: Id<"role
       className="flex flex-col gap-4"
       aria-label="New role"
     >
-      <p className="text-xs text-muted">Define the job once. People assigned to it inherit its title and description.</p>
+      <p className="text-xs text-muted">Define the job once. People assigned to it inherit its title, description, duties and metrics.</p>
       <RoleFields roles={roles} self={null} values={values} onChange={setValues} />
       {error && <p className="text-xs font-mono text-failed">{error}</p>}
       <footer className="flex justify-end border-t border-hairline pt-3">
@@ -254,6 +303,8 @@ function RoleEditor({ role, roles, onRemoved }: { role: Role; roles: Role[]; onR
     roleDescription: role.roleDescription,
     department: role.department ?? "",
     supervisorId: role.supervisorId ?? "",
+    duties: role.duties.join("\n"),
+    metrics: role.metrics.map(formatMetricLine).join("\n"),
   };
   const [values, setValues] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -275,6 +326,8 @@ function RoleEditor({ role, roles, onRemoved }: { role: Role; roles: Role[]; onR
             roleDescription: values.roleDescription,
             department: values.department,
             supervisorId: values.supervisorId ? (values.supervisorId as Id<"roles">) : "",
+            duties: splitLines(values.duties),
+            metrics: parseMetrics(values.metrics),
           });
           setSaved(true);
         } catch (err) {

@@ -22,7 +22,7 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
 - `src/server/convex/` — the runtime. Convex functions dir (see `convex.json`); each file is an API namespace:
   - `schema.ts`, `convex.config.ts`, `crons.ts` — infrastructure
   - `model/` — shared ctx helpers (agent lookup, run settling); NOT Convex functions, never in the API
-  - `roles.ts` — roles defined once (title, description, department, reports-to role); `seed` = starter departments; agents copy title/description from their role and are re-synced on edit
+  - `roles.ts` — roles defined once (title, description, department, reports-to role, **duties**, **metrics**); `seed` = the org that runs the company from `src/lib/orgSeed.ts` (8 departments incl. Finance and People & Wellbeing, 15 roles; idempotent, backfills duties/metrics on existing roles); agents copy title/description from their role and are re-synced on edit; duties/metrics are read from the role at prompt time (`model/profile.ts` → `withProfile`)
   - `agents.ts` / `jobs.ts` — CRUD for the cast and their standing jobs (`hire`/`update` take a `roleId` or free text)
   - `skills.ts` — the skills catalogue (`list`/`get`/`create`/`update`/`remove`), who holds what at which level (`assign`/`unassign`/`forAgent`), `importFromSmithery` (registry API, `SMITHERY_API_KEY`), `seed` (the office's own all-sector catalogue from `src/lib/skillSeed.ts`: finance, planning, social, emotional, research, coding, operations…; idempotent), `upsertBatch`; prompt text lives in `skillPrompts`; `model/skills.ts` = `withSkills` (agent + skills for prompts) and `bumpSkillUses` (called from `runs.finishRun` with the run's `skillIds`)
   - `runs.ts` — run + artifact lifecycle (internal); every unit of work goes through it
@@ -30,7 +30,7 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
   - `delegation.ts` — task routing (supervisor decides), delegation, report-backs
   - `artifacts.ts` — reading documents (/docs, /read, email lookups, web `byId` with version chain)
   - `office.ts` — the web viewer's reactive snapshot (cast + recent runs + documents)
-  - `work.ts` — work-state queries injected into chat
+  - `work.ts` — work-state queries injected into chat, incl. the **scorecard**: the role's metrics scored from the last 7 days of runs/artifacts by `src/lib/metrics.ts` (`computeMeasures`/`scoreMetrics`; measure ids like `delegations.reported_same_day`, `artifacts.delivered`; `manual` = not tracked yet, never scored by the model)
   - `chat.ts` / `email.ts` — @mention conversations (+ `timeline` merged stream and `messages` paginated query for the web); send-only Resend delivery
 - `src/server/vercel/` — AI SDK layer: model client (OpenRouter) + pure prompt builders/parsers
 - `src/cli/` — the headless terminal control (REPL, @mention parsing)
@@ -40,7 +40,8 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
 ## Principles (from the spec, enforced)
 
 - **Agents are data, not processes.** An agent is a row; it "comes alive" only when a cron or mention invokes a Convex function.
-- **A job description is a description, not a command.** Roles own `roleName` + prose `roleDescription`; agents copy them into `jobTitle`/`jobDescription` when assigned (free text only when no role) and keep their own `successfulDay` list. Personality (traits + notes) shapes tone, never facts.
+- **A job description is a description, not a command.** Roles own `roleName` + prose `roleDescription` + `duties` (what the holder does on a turn) + `metrics` (a successful week, each naming a measure the office counts); agents copy title/description when assigned (free text only when no role) and keep their own `successfulDay` list as personal additions. Personality (traits + notes) shapes tone, never facts.
+- **Metrics are counted, never claimed.** A scorecard is computed from run/artifact rows (`src/lib/metrics.ts`) and injected into the work state; metrics without a source are `manual` and show as "not tracked yet". The company is Kent: departments run him (his day, money, tools, income, presence, relationships, health), not customers.
 - **Skills are records.** An agent claims only the skills in `agentSkills` (with level); the system prompt lists them. Levels rise from counted uses (`src/lib/skills.ts` ladder) or by hand, never down automatically. Imported skills are knowledge only — executable tools live in the repo (`src/server/vercel/tools/`, keyed by skill slug) and are the only thing that runs.
 - **Status answers come from injected work state only** (runs/jobs/artifacts). Never let the LLM invent progress.
 - **The office animates off records.** Sprite behavior (working / delegating / idle) is derived in `src/lib/office/sim.ts` from run rows; nothing on screen is inferred from prose. Walks are planned over the walkability grid (`nav.ts`), never through walls or furniture; `?nav` on the web URL (dev only) overlays blocked cells and planned paths.

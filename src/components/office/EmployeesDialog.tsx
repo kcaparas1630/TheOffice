@@ -6,12 +6,13 @@
 // Edits go through `agents.update`; hiring and firing through their own
 // mutations. Only records are shown — nothing here is inferred from prose.
 import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/server/convex/_generated/api";
 import type { Snapshot } from "./OfficeCanvas";
 import type { Id } from "@/server/convex/_generated/dataModel";
 import { defaultSpriteFor, isSpriteId, SPRITE_CATALOG, spriteUrl } from "@/lib/office/sprites";
 import { timeAgo } from "@/lib/time";
+import { formatMetric } from "@/lib/metrics";
 import { errorText, FIELD, HireForm, LABEL, RoleSelect, splitCommas, splitLines } from "./HireForm";
 import { LookGrid } from "./LookGrid";
 import { SkillPicker } from "./SkillPicker";
@@ -378,6 +379,7 @@ function FireButton({ agent, onFired }: { agent: Agent; onFired: () => void }) {
 }
 
 function JobPanel({ agent, jobs }: { agent: Agent; jobs: Job[] }) {
+  const card = useQuery(api.work.scorecardForAgent, { agentId: agent._id });
   const [jobDescription, setJobDescription] = useState(agent.jobDescription);
   const [successfulDay, setSuccessfulDay] = useState(agent.successfulDay.join("\n"));
   const { save, busy, error, saved } = useSave();
@@ -402,9 +404,43 @@ function JobPanel({ agent, jobs }: { agent: Agent; jobs: Job[] }) {
           <textarea id="emp-desc" rows={4} className={`${FIELD} resize-y`} value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} />
         )}
       </div>
+      {agent.roleId && card && card.duties.length > 0 && (
+        <div>
+          <span className={LABEL}>Duties (from the {agent.jobTitle} role)</span>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm">
+            {card.duties.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {agent.roleId && card && card.scorecard.length > 0 && (
+        <div>
+          <span className={LABEL}>A successful week, scored from the last {card.windowDays} days of records</span>
+          <ul className="mt-1 space-y-1 text-sm">
+            {card.scorecard.map((m) => (
+              <li key={m.statement} className="flex items-baseline gap-2">
+                <span
+                  className={`shrink-0 font-mono text-[10px] ${
+                    m.met === null ? "text-muted" : m.met ? "text-working" : "text-failed"
+                  }`}
+                >
+                  {m.met === null ? "n/a" : m.met ? "met" : "behind"}
+                </span>
+                <span className={m.met === null ? "text-muted" : ""}>{formatMetric(m)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[10px] text-muted">
+            Counted from runs and documents, never claimed. &quot;n/a&quot; needs a source the office does not have yet.
+          </p>
+        </div>
+      )}
       <div>
         <label className={LABEL} htmlFor="emp-day">
-          A successful day would be… (one item per line)
+          {agent.roleId && card && card.scorecard.length > 0
+            ? "Personal additions to a good day (one per line)"
+            : "A successful day would be… (one item per line)"}
         </label>
         <textarea id="emp-day" rows={4} className={`${FIELD} resize-y`} value={successfulDay} onChange={(e) => setSuccessfulDay(e.target.value)} />
       </div>

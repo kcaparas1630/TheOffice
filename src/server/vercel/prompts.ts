@@ -2,6 +2,8 @@
 // The persona is built from the agent's profile (job description + personality),
 // and grounded with hard rules so status answers come from real work state only.
 
+import { formatMetric, type MetricScore, type RoleMetric } from "../../lib/metrics";
+
 export interface AgentProfile {
   name: string;
   jobTitle: string;
@@ -13,6 +15,9 @@ export interface AgentProfile {
   };
   // Skills on record, with a 1–5 level. Absent = none known.
   skills?: { name: string; level: number }[];
+  // From the role: what they do on a turn, and what a successful week means.
+  duties?: string[];
+  metrics?: RoleMetric[];
 }
 
 const SKILL_LEVEL_WORDS = ["", "learning", "working", "solid", "strong", "expert"];
@@ -31,6 +36,8 @@ export interface WorkState {
     task?: string;
   }[];
   artifacts: { title: string; kind: string; version: number; createdAt: number }[];
+  // The role's metrics scored from records over the last 7 days.
+  scorecard?: MetricScore[];
 }
 
 export function buildSystemPrompt(profile: AgentProfile): string {
@@ -41,13 +48,28 @@ export function buildSystemPrompt(profile: AgentProfile): string {
     ``,
     `## Your job description`,
     profile.jobDescription,
-    ``,
-    `## A successful day for you looks like`,
-    ...profile.successfulDay.map((item) => `- ${item}`),
+  ];
+  if (profile.duties && profile.duties.length > 0) {
+    lines.push(``, `## Your duties (what you do on a turn)`, ...profile.duties.map((d) => `- ${d}`));
+  }
+  if (profile.metrics && profile.metrics.length > 0) {
+    lines.push(
+      ``,
+      `## A successful week for you is measured as`,
+      ...profile.metrics.map((m) => `- ${m.statement} (target ${m.target}${m.unit === "%" ? "%" : ` ${m.unit}`})`),
+      `These are scored from records, never by you. Your current scorecard, when present, is in the work state below.`
+    );
+    if (profile.successfulDay.length > 0) {
+      lines.push(``, `## And personally, a good day also means`, ...profile.successfulDay.map((item) => `- ${item}`));
+    }
+  } else {
+    lines.push(``, `## A successful day for you looks like`, ...profile.successfulDay.map((item) => `- ${item}`));
+  }
+  lines.push(
     ``,
     `## Your personality`,
-    traits ? `Traits: ${traits}.` : `Traits: none specified — stay neutral and professional.`,
-  ];
+    traits ? `Traits: ${traits}.` : `Traits: none specified — stay neutral and professional.`
+  );
   if (profile.personality.notes.trim()) {
     lines.push(profile.personality.notes.trim());
   }
@@ -111,6 +133,11 @@ export function formatWorkState(state: WorkState): string {
         `- "${artifact.title}" (${artifact.kind} v${artifact.version}, ${fmtTime(artifact.createdAt)})`
       );
     }
+  }
+
+  if (state.scorecard && state.scorecard.length > 0) {
+    lines.push(`Your scorecard (last 7 days, computed from records):`);
+    for (const m of state.scorecard) lines.push(`- ${formatMetric(m)}`);
   }
   return lines.join("\n");
 }

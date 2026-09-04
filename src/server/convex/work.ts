@@ -6,9 +6,52 @@ import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { WorkState } from "../vercel/prompts";
+import {
+  computeMeasures,
+  scoreMetrics,
+  SCORE_WINDOW_MS,
+  type MetricScore,
+  type RoleMetric,
+  type RunRow,
+} from "../../lib/metrics";
 
 const RECENT_RUNS = 10;
 const RECENT_ARTIFACTS = 5;
+
+// Score the role's metrics from the last 7 days of runs and documents. The
+// numbers come from rows, so an agent can only report what actually happened.
+async function scorecardFor(ctx: QueryCtx, agentId: Id<"agents">, metrics: RoleMetric[]): Promise<MetricScore[]> {
+  if (metrics.length === 0) return [];
+  const now = Date.now();
+  const since = now - SCORE_WINDOW_MS;
+  const recent = await ctx.db
+    .query("runs")
+    .filter((q) => q.or(q.gte(q.field("startedAt"), since), q.eq(q.field("status"), "running")))
+    .collect();
+  const ownerOf = new Map(recent.map((r) => [r._id, r.agentId]));
+  const runs: RunRow[] = [];
+  for (const r of recent) {
+    let parentAgentId: Id<"agents"> | null = null;
+    if (r.parentRunId) {
+      parentAgentId = ownerOf.get(r.parentRunId) ?? (await ctx.db.get(r.parentRunId))?.agentId ?? null;
+    }
+    runs.push({
+      agentId: r.agentId,
+      parentAgentId,
+      trigger: r.trigger,
+      status: r.status,
+      startedAt: r.startedAt,
+      finishedAt: r.finishedAt ?? null,
+    });
+  }
+  const artifacts = await ctx.db
+    .query("artifacts")
+    .withIndex("by_agent", (q) => q.eq("agentId", agentId))
+    .filter((q) => q.gte(q.field("_creationTime"), since))
+    .collect();
+  const values = computeMeasures({ agentId, now, runs, artifactsAt: artifacts.map((a) => a._creationTime) });
+  return scoreMetrics(metrics, values);
+}
 
 async function collectState(ctx: QueryCtx, agentId: Id<"agents">): Promise<WorkState | null> {
   const agent = await ctx.db.get(agentId);
@@ -35,7 +78,11 @@ async function collectState(ctx: QueryCtx, agentId: Id<"agents">): Promise<WorkS
     .order("desc")
     .take(RECENT_ARTIFACTS);
 
+  const role = agent.roleId ? await ctx.db.get(agent.roleId) : null;
+  const scorecard = await scorecardFor(ctx, agentId, (role?.metrics ?? []) as RoleMetric[]);
+
   return {
+    scorecard,
     status: agent.status,
     supervisorName: supervisor?.name,
     reportNames,
@@ -61,6 +108,23 @@ async function collectState(ctx: QueryCtx, agentId: Id<"agents">): Promise<WorkS
 export const statusForAgent = query({
   args: { agentId: v.id("agents") },
   handler: async (ctx, { agentId }) => collectState(ctx, agentId),
+});
+
+// The Employees dialog's Job tab: the role's duties and the scored metrics.
+export const scorecardForAgent = query({
+  args: { agentId: v.id("agents") },
+  handler: async (ctx, { agentId }) => {
+    const agent = await ctx.db.get(agentId);
+    if (!agent) return null;
+    const role = agent.roleId ? await ctx.db.get(agent.roleId) : null;
+    const metrics = (role?.metrics ?? []) as RoleMetric[];
+    return {
+      roleName: role?.roleName ?? null,
+      duties: role?.duties ?? [],
+      scorecard: await scorecardFor(ctx, agentId, metrics),
+      windowDays: 7,
+    };
+  },
 });
 
 // Injected into every chat call so status answers reflect real task state.

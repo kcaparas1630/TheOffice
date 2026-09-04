@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { validateAgentName } from "../../lib/agentName";
 import { findAgentByName as findByName } from "./model/agents";
-import { withSkills } from "./model/skills";
+import { withProfile } from "./model/profile";
 import { clampLevel } from "../../lib/skills";
 import { isSpriteId, SPRITE_IDS } from "../../lib/office/sprites";
 
@@ -238,7 +238,7 @@ export const getByNameInternal = internalQuery({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {
     const agent = await findByName(ctx, name);
-    return agent ? withSkills(ctx, agent) : null;
+    return agent ? withProfile(ctx, agent) : null;
   },
 });
 

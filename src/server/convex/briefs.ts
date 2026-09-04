@@ -13,7 +13,7 @@ import { v } from "convex/values";
 import { generateObject, generateText } from "ai";
 import type { Id } from "./_generated/dataModel";
 import { chatModel, extractCostUsd } from "../vercel/model";
-import { withSkills } from "./model/skills";
+import { withProfile } from "./model/profile";
 import { parseHnHits, parseFeedXml, selectCandidates, type CandidateItem } from "../vercel/feeds";
 import {
   briefSchema,
@@ -69,7 +69,7 @@ export const getJobWithAgent = internalQuery({
     if (!job) return null;
     const agent = await ctx.db.get(job.agentId);
     if (!agent) return null;
-    return { job, agent: await withSkills(ctx, agent) };
+    return { job, agent: await withProfile(ctx, agent) };
   },
 });
 

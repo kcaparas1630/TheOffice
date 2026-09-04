@@ -49,6 +49,8 @@ export const snapshot = query({
           roleDescription: r.roleDescription,
           department: r.department ?? null,
           supervisorId: r.supervisorId ?? null,
+          duties: r.duties ?? [],
+          metrics: r.metrics ?? [],
         }))
         .sort((a, b) => (a.department ?? "").localeCompare(b.department ?? "") || a.roleName.localeCompare(b.roleName)),
       jobs: jobs.map((j) => ({
