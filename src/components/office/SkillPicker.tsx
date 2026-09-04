@@ -57,7 +57,8 @@ export function SkillPicker({
   onOpenSkills?: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const results = useQuery(api.skills.list, { search, limit: 12 });
+  const [category, setCategory] = useState("");
+  const results = useQuery(api.skills.list, { search, category: category || undefined });
   const held = new Set(value.map((s) => s.skillId));
   const candidates = (results?.skills ?? []).filter((s) => !held.has(s._id));
 
@@ -94,13 +95,28 @@ export function SkillPicker({
         <label className={LABEL} htmlFor="skill-search">
           Add a skill
         </label>
-        <input
-          id="skill-search"
-          className={FIELD}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={results && results.total === 0 ? "The catalogue is empty" : "Search the catalogue…"}
-        />
+        <div className="flex gap-2">
+          <input
+            id="skill-search"
+            className={FIELD}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={results && results.total === 0 ? "The catalogue is empty" : "Search the catalogue…"}
+          />
+          <select
+            aria-label="Category"
+            className={`${FIELD} w-40 shrink-0`}
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="">All categories</option>
+            {(results?.categories ?? []).map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name || "uncategorised"} ({c.count})
+              </option>
+            ))}
+          </select>
+        </div>
         {results && results.total === 0 ? (
           <p className="mt-1 text-xs text-muted">
             Nothing in the catalogue yet.{" "}
@@ -111,7 +127,13 @@ export function SkillPicker({
             )}
           </p>
         ) : (
-          <ul className="mt-1 max-h-40 overflow-y-auto border border-hairline text-sm">
+          <ul className="mt-1 max-h-56 overflow-y-auto border border-hairline text-sm">
+            {results && (
+              <li className="sticky top-0 border-b border-hairline bg-background px-3 py-1 text-[10px] font-mono text-muted">
+                {candidates.length} of {results.total} in the catalogue
+                {search || category ? " match" : ""}
+              </li>
+            )}
             {candidates.length === 0 && (
               <li className="px-3 py-1.5 text-xs text-muted">{results ? "No match." : "Loading…"}</li>
             )}

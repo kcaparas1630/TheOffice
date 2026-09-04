@@ -12,7 +12,9 @@ import { errorText, FIELD, LABEL } from "./HireForm";
 
 export function SkillsDialog({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState("");
-  const list = useQuery(api.skills.list, { search, limit: 100 });
+  const [category, setCategory] = useState("");
+  const list = useQuery(api.skills.list, { search, category: category || undefined });
+  const seedCatalogue = useMutation(api.skills.seed);
   const [selectedId, setSelectedId] = useState<Id<"skills"> | "new" | null>(null);
   const importSkills = useAction(api.skills.importFromSmithery);
   const [importing, setImporting] = useState(false);
@@ -26,6 +28,19 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
 
   const skills = list?.skills ?? [];
   const current: Id<"skills"> | "new" = selectedId ?? (skills.length === 0 ? "new" : skills[0]._id);
+
+  const runSeed = async () => {
+    setImporting(true);
+    setImportNote(null);
+    try {
+      const r = await seedCatalogue({});
+      setImportNote(`Office catalogue: ${r.created} new, ${r.updated} refreshed.`);
+    } catch (e) {
+      setImportNote(errorText(e));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const runImport = async () => {
     setImporting(true);
@@ -53,7 +68,9 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
         <header className="relative flex flex-col items-center border-b border-hairline px-6 pt-3 pb-3">
           <h2 className="text-lg font-semibold">Skills</h2>
           <span className="text-xs font-mono text-muted">
-            {list ? `${list.total} in the catalogue${search ? ` · ${list.matched} match` : ""}` : "Loading…"}
+            {list
+              ? `${list.total} in the catalogue${search || category ? ` · ${list.matched} shown` : ""}`
+              : "Loading…"}
           </span>
           <button
             type="button"
@@ -74,6 +91,19 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name, category, description…"
               />
+              <select
+                aria-label="Category"
+                className={`${FIELD} mt-2`}
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="">All categories{list ? ` (${list.total})` : ""}</option>
+                {(list?.categories ?? []).map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name || "uncategorised"} ({c.count})
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto py-1 text-sm">
               {skills.map((s) => (
@@ -98,7 +128,16 @@ export function SkillsDialog({ onClose }: { onClose: () => void }) {
               ))}
               {list && skills.length === 0 && <p className="px-4 py-2 text-xs text-muted">Nothing here yet.</p>}
             </div>
-            <div className="border-t border-hairline px-4 py-2 text-xs font-mono">
+            <div className="flex flex-col gap-1 border-t border-hairline px-4 py-2 text-xs font-mono">
+              <button
+                type="button"
+                onClick={runSeed}
+                disabled={importing}
+                className="text-left text-muted hover:text-foreground hover:underline disabled:opacity-50"
+                title="The office's own catalogue: work and life skills across finance, planning, social, emotional, research, coding, operations and more. Safe to re-run."
+              >
+                {importing ? "Working…" : "Add the office catalogue (all sectors)"}
+              </button>
               <button
                 type="button"
                 onClick={runImport}

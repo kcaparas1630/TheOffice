@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
 import { mapSmitherySkill } from "../../lib/skills";
+import { SEED_CATEGORIES, SKILL_SEED } from "../../lib/skillSeed";
 
 const modules = {
   ...import.meta.glob("./{agents,work,roles,skills,runs,office}.ts"),
@@ -100,5 +101,41 @@ describe("skills catalogue", () => {
     const list = await office.query(api.skills.list, {});
     expect(list.total).toBe(1);
     expect(list.skills[0]).toMatchObject({ slug: "anthropics/pdf", description: "v2", popularity: 20, source: "smithery" });
+  });
+});
+
+describe("office catalogue seed", () => {
+  test("seeds every sector once, lists by category, and re-seeding never duplicates", async () => {
+    const office = t();
+    const first = await office.mutation(api.skills.seed, {});
+    expect(first).toEqual({ created: SKILL_SEED.length, updated: 0 });
+
+    const all = await office.query(api.skills.list, {});
+    expect(all.total).toBe(SKILL_SEED.length);
+    expect(all.skills).toHaveLength(SKILL_SEED.length); // the whole catalogue, not a page
+    const names = new Set(all.categories.map((c) => c.name));
+    for (const c of SEED_CATEGORIES) expect(names.has(c)).toBe(true);
+
+    const finance = await office.query(api.skills.list, { category: "Finance" });
+    expect(finance.matched).toBe(SKILL_SEED.filter((s) => s.category === "Finance").length);
+    expect(finance.skills.every((s) => s.category === "Finance")).toBe(true);
+
+    const soft = await office.query(api.skills.list, { search: "listening" });
+    expect(soft.skills.map((s) => s.name)).toContain("Active listening");
+    const detail = await office.query(api.skills.get, { skillId: soft.skills[0]._id });
+    expect(detail?.prompt).toMatch(/Summarise what they said/);
+
+    const again = await office.mutation(api.skills.seed, {});
+    expect(again).toEqual({ created: 0, updated: SKILL_SEED.length });
+    expect((await office.query(api.skills.list, {})).total).toBe(SKILL_SEED.length);
+  });
+
+  test("seed names are unique and every entry has a prompt", () => {
+    const slugs = SKILL_SEED.map((s) => s.name.toLowerCase());
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const s of SKILL_SEED) {
+      expect(s.description.length).toBeGreaterThan(10);
+      expect(s.prompt.length).toBeGreaterThan(40);
+    }
   });
 });

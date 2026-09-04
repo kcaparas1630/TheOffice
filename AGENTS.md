@@ -24,7 +24,7 @@ A curation of AI agents doing work. Two front-ends over one Convex runtime: the 
   - `model/` — shared ctx helpers (agent lookup, run settling); NOT Convex functions, never in the API
   - `roles.ts` — roles defined once (title, description, department, reports-to role); `seed` = starter departments; agents copy title/description from their role and are re-synced on edit
   - `agents.ts` / `jobs.ts` — CRUD for the cast and their standing jobs (`hire`/`update` take a `roleId` or free text)
-  - `skills.ts` — the skills catalogue (`list`/`get`/`create`/`update`/`remove`), who holds what at which level (`assign`/`unassign`/`forAgent`), `importFromSmithery` (registry API, `SMITHERY_API_KEY`), `upsertBatch`; prompt text lives in `skillPrompts`; `model/skills.ts` = `withSkills` (agent + skills for prompts) and `bumpSkillUses` (called from `runs.finishRun` with the run's `skillIds`)
+  - `skills.ts` — the skills catalogue (`list`/`get`/`create`/`update`/`remove`), who holds what at which level (`assign`/`unassign`/`forAgent`), `importFromSmithery` (registry API, `SMITHERY_API_KEY`), `seed` (the office's own all-sector catalogue from `src/lib/skillSeed.ts`: finance, planning, social, emotional, research, coding, operations…; idempotent), `upsertBatch`; prompt text lives in `skillPrompts`; `model/skills.ts` = `withSkills` (agent + skills for prompts) and `bumpSkillUses` (called from `runs.finishRun` with the run's `skillIds`)
   - `runs.ts` — run + artifact lifecycle (internal); every unit of work goes through it
   - `briefs.ts` — the brief pipeline: feeds → generateObject → artifact, cron entry, revisions
   - `delegation.ts` — task routing (supervisor decides), delegation, report-backs

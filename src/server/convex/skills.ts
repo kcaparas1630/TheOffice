@@ -8,8 +8,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { findAgentByName } from "./model/agents";
 import { skillsForAgent } from "./model/skills";
 import { clampLevel, mapSmitherySkill, slugify, type SkillRow, type SmitherySkill } from "../../lib/skills";
+import { SKILL_SEED } from "../../lib/skillSeed";
 
-const LIST_LIMIT = 60;
+// The whole catalogue ships to pickers (a few hundred small rows); the cap
+// only guards against a runaway import. Paginate when it is earned.
+const LIST_MAX = 1000;
 
 // Replace (or clear) a skill's instructions in the side table.
 async function setPrompt(ctx: MutationCtx, skillId: Id<"skills">, prompt: string | undefined) {
@@ -52,21 +55,34 @@ function summary(s: Doc<"skills">, holders: string[]) {
   };
 }
 
-// Catalogue search for pickers and the Skills dialog: most popular first,
-// filtered by a substring, capped so the client never loads thousands.
+// Catalogue for pickers and the Skills dialog: every skill, most popular
+// first, optionally narrowed by a substring and/or a category. Also returns
+// the category list with counts so the UI can offer a filter.
 export const list = query({
-  args: { search: v.optional(v.string()), limit: v.optional(v.number()) },
-  handler: async (ctx, { search, limit }) => {
+  args: { search: v.optional(v.string()), category: v.optional(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, { search, category, limit }) => {
     const all = await ctx.db.query("skills").withIndex("by_popularity").order("desc").collect();
     const needle = search?.trim() ?? "";
-    const filtered = needle ? all.filter((s) => matches(s, needle)) : all;
+    const wanted = category?.trim() ?? "";
+    const filtered = all.filter(
+      (s) => (!wanted || (s.category ?? "") === wanted) && (!needle || matches(s, needle))
+    );
+    const counts = new Map<string, number>();
+    for (const s of all) {
+      const c = s.category ?? "";
+      counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+    const categories = [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => (a.name === "" ? 1 : b.name === "" ? -1 : a.name.localeCompare(b.name)));
     const holds = await ctx.db.query("agentSkills").collect();
     const agents = await ctx.db.query("agents").collect();
     const name = new Map(agents.map((a) => [a._id, a.name]));
-    const cap = Math.min(200, Math.max(1, limit ?? LIST_LIMIT));
+    const cap = Math.min(LIST_MAX, Math.max(1, limit ?? LIST_MAX));
     return {
       total: all.length,
       matched: filtered.length,
+      categories,
       skills: filtered.slice(0, cap).map((s) =>
         summary(
           s,
@@ -238,40 +254,67 @@ export const unassign = mutation({
 
 // ---- importing from Smithery ----
 
+// Insert-or-update rows by slug; the one write path for every bulk source.
+async function upsertRows(ctx: MutationCtx, rows: SkillRow[]) {
+  let created = 0;
+  let updated = 0;
+  for (const raw of rows) {
+    const existing = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", raw.slug))
+      .first();
+    const doc = {
+      name: raw.name,
+      slug: raw.slug,
+      description: raw.description,
+      category: raw.category ?? undefined,
+      source: raw.source,
+      namespace: raw.namespace ?? undefined,
+      sourceUrl: raw.sourceUrl ?? undefined,
+      hasPrompt: !!raw.prompt,
+      verified: raw.verified,
+      popularity: raw.popularity,
+    };
+    let skillId: Id<"skills">;
+    if (existing) {
+      await ctx.db.patch(existing._id, doc);
+      skillId = existing._id;
+      updated += 1;
+    } else {
+      skillId = await ctx.db.insert("skills", { ...doc, importedAt: Date.now() });
+      created += 1;
+    }
+    await setPrompt(ctx, skillId, raw.prompt ?? undefined);
+  }
+  return { created, updated };
+}
+
 export const upsertBatch = internalMutation({
   args: { rows: v.array(v.any()) },
-  handler: async (ctx, { rows }) => {
-    let created = 0;
-    let updated = 0;
-    for (const raw of rows as SkillRow[]) {
-      const existing = await ctx.db
-        .query("skills")
-        .withIndex("by_slug", (q) => q.eq("slug", raw.slug))
-        .first();
-      const doc = {
-        name: raw.name,
-        slug: raw.slug,
-        description: raw.description,
-        category: raw.category ?? undefined,
-        source: raw.source,
-        namespace: raw.namespace ?? undefined,
-        sourceUrl: raw.sourceUrl ?? undefined,
-        hasPrompt: !!raw.prompt,
-        verified: raw.verified,
-        popularity: raw.popularity,
-      };
-      let skillId: Id<"skills">;
-      if (existing) {
-        await ctx.db.patch(existing._id, doc);
-        skillId = existing._id;
-        updated += 1;
-      } else {
-        skillId = await ctx.db.insert("skills", { ...doc, importedAt: Date.now() });
-        created += 1;
-      }
-      await setPrompt(ctx, skillId, raw.prompt ?? undefined);
-    }
-    return { created, updated };
+  handler: async (ctx, { rows }) => upsertRows(ctx, rows as SkillRow[]),
+});
+
+// The office's own catalogue (src/lib/skillSeed.ts): work and life skills
+// across every sector — finance, planning, social, emotional, research,
+// coding, operations… Idempotent: re-seeding updates text, never duplicates,
+// and never touches who holds what.
+export const seed = mutation({
+  args: {},
+  returns: v.object({ created: v.number(), updated: v.number() }),
+  handler: async (ctx) => {
+    const rows: SkillRow[] = SKILL_SEED.map((s) => ({
+      name: s.name,
+      slug: slugify(s.name),
+      description: s.description,
+      category: s.category,
+      source: "custom",
+      namespace: null,
+      sourceUrl: null,
+      prompt: s.prompt,
+      verified: true,
+      popularity: 0,
+    }));
+    return upsertRows(ctx, rows);
   },
 });
 
