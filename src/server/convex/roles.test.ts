@@ -6,7 +6,7 @@ import { api } from "./_generated/api";
 import { STARTER_ROLES } from "./roles";
 
 const modules = {
-  ...import.meta.glob("./{agents,work,roles}.ts"),
+  ...import.meta.glob("./{agents,work,roles,skills}.ts"),
   ...import.meta.glob("./_generated/**/*.js"),
 };
 

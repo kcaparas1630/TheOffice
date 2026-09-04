@@ -14,8 +14,9 @@ import { defaultSpriteFor, isSpriteId, SPRITE_CATALOG, spriteUrl } from "@/lib/o
 import { timeAgo } from "@/lib/time";
 import { errorText, FIELD, HireForm, LABEL, RoleSelect, splitCommas, splitLines } from "./HireForm";
 import { LookGrid } from "./LookGrid";
+import { SkillPicker } from "./SkillPicker";
 
-export type EmployeesTab = "profile" | "job" | "personality" | "look" | "hire";
+export type EmployeesTab = "profile" | "job" | "personality" | "skills" | "look" | "hire";
 
 type Agent = Snapshot["agents"][number];
 type Job = Snapshot["jobs"][number];
@@ -25,6 +26,7 @@ const TABS: { id: EmployeesTab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "job", label: "Job" },
   { id: "personality", label: "Personality" },
+  { id: "skills", label: "Skills" },
   { id: "look", label: "Look" },
 ];
 
@@ -38,6 +40,7 @@ export function EmployeesDialog({
   onClose,
   onSelectName,
   onOpenRoles,
+  onOpenSkills,
 }: {
   roster: Agent[];
   jobs: Job[];
@@ -48,6 +51,7 @@ export function EmployeesDialog({
   onClose: () => void;
   onSelectName: (name: string) => void;
   onOpenRoles?: () => void;
+  onOpenSkills?: () => void;
 }) {
   const [name, setName] = useState<string | null>(initialName);
   const [tab, setTab] = useState<EmployeesTab>(roster.length === 0 ? "hire" : initialTab);
@@ -177,6 +181,7 @@ export function EmployeesDialog({
                   roster={roster}
                   roles={roles}
                   onOpenRoles={onOpenRoles}
+                  onOpenSkills={onOpenSkills}
                   onSpriteChange={setHireSprite}
                   onHired={(hired) => {
                     setName(hired);
@@ -190,6 +195,8 @@ export function EmployeesDialog({
                 <JobPanel key={agent!._id} agent={agent!} jobs={jobs.filter((j) => j.agentId === agent!._id)} />
               ) : tab === "personality" ? (
                 <PersonalityPanel key={agent!._id} agent={agent!} />
+              ) : tab === "skills" ? (
+                <SkillsPanel key={agent!._id} agent={agent!} onOpenSkills={onOpenSkills} />
               ) : (
                 <LookPanel key={agent!._id} agent={agent!} />
               )}
@@ -483,6 +490,37 @@ function LookPanel({ agent }: { agent: Agent }) {
         </button>
         {error && <span className="text-failed">{error}</span>}
       </div>
+    </div>
+  );
+}
+
+// Skills the person holds, each at a level; changes save immediately.
+function SkillsPanel({ agent, onOpenSkills }: { agent: Agent; onOpenSkills?: () => void }) {
+  const assign = useMutation(api.skills.assign);
+  const unassign = useMutation(api.skills.unassign);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-muted">
+        Levels rise on their own with completed runs that used the skill (50 uses to reach 2, then 150, 450, 950) and can
+        be set by hand. {agent.name} only claims skills listed here.
+      </p>
+      <SkillPicker
+        value={agent.skills.map((s) => ({ skillId: s.skillId, name: s.name, level: s.level, uses: s.uses }))}
+        onAdd={(s) => run(() => assign({ agentName: agent.name, skillId: s.skillId, level: 1 }))}
+        onLevel={(skillId, level) => run(() => assign({ agentName: agent.name, skillId, level }))}
+        onRemove={(skillId) => run(() => unassign({ agentName: agent.name, skillId }))}
+        onOpenSkills={onOpenSkills}
+      />
+      {error && <p className="text-xs font-mono text-failed">{error}</p>}
     </div>
   );
 }

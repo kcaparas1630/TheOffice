@@ -3,6 +3,8 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { validateAgentName } from "../../lib/agentName";
 import { findAgentByName as findByName } from "./model/agents";
+import { withSkills } from "./model/skills";
+import { clampLevel } from "../../lib/skills";
 import { isSpriteId, SPRITE_IDS } from "../../lib/office/sprites";
 
 export const hire = mutation({
@@ -17,6 +19,8 @@ export const hire = mutation({
     notes: v.string(),
     supervisorName: v.optional(v.string()),
     sprite: v.optional(v.string()),
+    // Skills they start with, each at a level (1–5).
+    skills: v.optional(v.array(v.object({ skillId: v.id("skills"), level: v.number() }))),
   },
   handler: async (ctx, args) => {
     if (args.sprite && !isSpriteId(args.sprite)) {
@@ -61,6 +65,13 @@ export const hire = mutation({
       sprite: args.sprite,
       status: "idle",
     });
+    const seen = new Set<string>();
+    for (const s of args.skills ?? []) {
+      if (seen.has(s.skillId)) continue;
+      seen.add(s.skillId);
+      if (!(await ctx.db.get(s.skillId))) throw new Error("Skill not found.");
+      await ctx.db.insert("agentSkills", { agentId, skillId: s.skillId, level: clampLevel(s.level), uses: 0 });
+    }
     return { agentId, name: args.name.trim() };
   },
 });
@@ -205,6 +216,12 @@ export const fire = mutation({
         await ctx.db.patch(report._id, { supervisorId: undefined });
       }
     }
+    for (const held of await ctx.db
+      .query("agentSkills")
+      .withIndex("by_agent", (q) => q.eq("agentId", agent._id))
+      .collect()) {
+      await ctx.db.delete(held._id);
+    }
     for (const table of ["jobs", "runs", "artifacts"] as const) {
       const rows = await ctx.db
         .query(table)
@@ -219,7 +236,10 @@ export const fire = mutation({
 
 export const getByNameInternal = internalQuery({
   args: { name: v.string() },
-  handler: async (ctx, { name }) => findByName(ctx, name),
+  handler: async (ctx, { name }) => {
+    const agent = await findByName(ctx, name);
+    return agent ? withSkills(ctx, agent) : null;
+  },
 });
 
 export const saveThreadId = internalMutation({

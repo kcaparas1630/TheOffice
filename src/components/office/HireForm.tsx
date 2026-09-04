@@ -10,6 +10,7 @@ import type { Id } from "@/server/convex/_generated/dataModel";
 import { validateAgentName } from "@/lib/agentName";
 import { SPRITE_CATALOG } from "@/lib/office/sprites";
 import { LookGrid } from "./LookGrid";
+import { SkillPicker, type PickedSkill } from "./SkillPicker";
 
 export const FIELD =
   "w-full border-0 border-b border-hairline bg-transparent py-1 text-sm outline-none focus:border-foreground placeholder:text-muted";
@@ -28,12 +29,14 @@ export function HireForm({
   onHired,
   onSpriteChange,
   onOpenRoles,
+  onOpenSkills,
 }: {
   roster: { name: string; jobTitle: string }[];
   roles: RoleOption[];
   onHired: (name: string) => void;
   onSpriteChange?: (sprite: string) => void;
   onOpenRoles?: () => void;
+  onOpenSkills?: () => void;
 }) {
   const hire = useMutation(api.agents.hire);
   const [sprite, setSprite] = useState(SPRITE_CATALOG[0].id);
@@ -44,6 +47,7 @@ export function HireForm({
   const [traits, setTraits] = useState("");
   const [notes, setNotes] = useState("");
   const [supervisorName, setSupervisorName] = useState("");
+  const [skills, setSkills] = useState<PickedSkill[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -70,6 +74,7 @@ export function HireForm({
         notes: notes.trim(),
         supervisorName: supervisorName || undefined,
         sprite,
+        skills: skills.map((s) => ({ skillId: s.skillId, level: s.level })),
       });
       onHired(hired.name);
     } catch (err) {
@@ -155,6 +160,19 @@ export function HireForm({
               </option>
             ))}
           </select>
+        </div>
+      </div>
+
+      <div>
+        <span className={LABEL}>Skills (from the catalogue, each at a level)</span>
+        <div className="mt-2">
+          <SkillPicker
+            value={skills}
+            onAdd={(s) => setSkills((cur) => [...cur, { ...s, level: 1 }])}
+            onLevel={(id, level) => setSkills((cur) => cur.map((s) => (s.skillId === id ? { ...s, level } : s)))}
+            onRemove={(id) => setSkills((cur) => cur.filter((s) => s.skillId !== id))}
+            onOpenSkills={onOpenSkills}
+          />
         </div>
       </div>
 

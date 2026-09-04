@@ -18,9 +18,11 @@ import type * as email from "../email.js";
 import type * as jobs from "../jobs.js";
 import type * as model_agents from "../model/agents.js";
 import type * as model_runs from "../model/runs.js";
+import type * as model_skills from "../model/skills.js";
 import type * as office from "../office.js";
 import type * as roles from "../roles.js";
 import type * as runs from "../runs.js";
+import type * as skills from "../skills.js";
 import type * as work from "../work.js";
 
 import type {
@@ -40,9 +42,11 @@ declare const fullApi: ApiFromModules<{
   jobs: typeof jobs;
   "model/agents": typeof model_agents;
   "model/runs": typeof model_runs;
+  "model/skills": typeof model_skills;
   office: typeof office;
   roles: typeof roles;
   runs: typeof runs;
+  skills: typeof skills;
   work: typeof work;
 }>;
 

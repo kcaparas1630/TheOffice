@@ -10,6 +10,7 @@ import { ActivityStrip } from "@/components/office/ActivityStrip";
 import { OfficeMenu } from "@/components/office/OfficeMenu";
 import { EmployeesDialog, type EmployeesTab } from "@/components/office/EmployeesDialog";
 import { RolesDialog } from "@/components/office/RolesDialog";
+import { SkillsDialog } from "@/components/office/SkillsDialog";
 import { ChatPane, type PaneView } from "@/components/chat/ChatPane";
 
 export default function Home() {
@@ -18,6 +19,7 @@ export default function Home() {
   const [view, setView] = useState<PaneView>({ tab: "chat" });
   const [employees, setEmployees] = useState<EmployeesTab | null>(null);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export default function Home() {
             items={[
               { label: "Employees", onSelect: () => setEmployees("profile") },
               { label: "Roles", onSelect: () => setRolesOpen(true) },
+              { label: "Skills", onSelect: () => setSkillsOpen(true) },
             ]}
           />
           <OfficeCanvas snapshot={snapshot} selectedId={selectedId} onSelect={selectById} />
@@ -73,9 +76,14 @@ export default function Home() {
             setEmployees(null);
             setRolesOpen(true);
           }}
+          onOpenSkills={() => {
+            setEmployees(null);
+            setSkillsOpen(true);
+          }}
         />
       )}
       {rolesOpen && <RolesDialog onClose={() => setRolesOpen(false)} />}
+      {skillsOpen && <SkillsDialog onClose={() => setSkillsOpen(false)} />}
       <div className="min-h-0 border-l border-hairline">
         <ChatPane
           snapshot={snapshot}

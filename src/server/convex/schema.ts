@@ -12,6 +12,43 @@ export default defineSchema({
     supervisorId: v.optional(v.id("roles")), // the role this one reports to
   }).index("by_name", ["roleName"]),
 
+  // The skills catalogue: imported from Smithery's registry or hand-made.
+  // A skill is knowledge (its prompt text) plus, later, tools from the
+  // repo's registry keyed by slug. Nothing imported ever executes.
+  skills: defineTable({
+    name: v.string(),
+    slug: v.string(), // "namespace/slug" (Smithery) or a plain slug (custom); unique
+    description: v.string(),
+    category: v.optional(v.string()),
+    source: v.union(v.literal("smithery"), v.literal("custom")),
+    namespace: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    hasPrompt: v.boolean(), // instructions live in `skillPrompts` (they can be long)
+    verified: v.boolean(),
+    popularity: v.number(), // activations on the registry; sort key for pickers
+    importedAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_popularity", ["popularity"]),
+
+  // SKILL.md-style instructions, one per skill, read only when a prompt is
+  // built or the skill is opened — never when listing the catalogue.
+  skillPrompts: defineTable({
+    skillId: v.id("skills"),
+    prompt: v.string(),
+  }).index("by_skill", ["skillId"]),
+
+  // Who holds which skill, at what level (1–5). `uses` counts completed runs
+  // that invoked the skill's tools; the level only ever rises from it.
+  agentSkills: defineTable({
+    agentId: v.id("agents"),
+    skillId: v.id("skills"),
+    level: v.number(),
+    uses: v.number(),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_skill", ["skillId"]),
+
   // The cast. Each agent is data — it "comes alive" only when a cron or
   // mention invokes a function that loads its row and calls the LLM.
   agents: defineTable({
@@ -52,6 +89,7 @@ export default defineSchema({
     parentRunId: v.optional(v.id("runs")), // delegation = child run, one level max
     trigger: v.union(v.literal("schedule"), v.literal("chat"), v.literal("delegation")),
     task: v.optional(v.string()), // what was asked, recorded on the run itself
+    skillIds: v.optional(v.array(v.id("skills"))), // skills whose tools this run invoked
     status: v.union(
       v.literal("queued"),
       v.literal("running"),

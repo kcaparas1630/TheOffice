@@ -7,7 +7,7 @@ import { api } from "./_generated/api";
 // chat.ts is excluded: it needs the installed agent component and a live LLM.
 // _generated is included so convex-test can locate the functions root.
 const modules = {
-  ...import.meta.glob("./{agents,work,roles}.ts"),
+  ...import.meta.glob("./{agents,work,roles,skills}.ts"),
   ...import.meta.glob("./_generated/**/*.js"),
 };
 

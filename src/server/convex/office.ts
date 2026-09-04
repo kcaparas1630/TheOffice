@@ -14,6 +14,9 @@ export const snapshot = query({
     const artifacts = await ctx.db.query("artifacts").order("desc").take(RECENT_ARTIFACTS);
     const jobs = await ctx.db.query("jobs").collect();
     const roles = await ctx.db.query("roles").collect();
+    const holds = await ctx.db.query("agentSkills").collect();
+    const skills = await ctx.db.query("skills").collect();
+    const skillName = new Map(skills.map((s) => [s._id, s.name]));
     const roleName = new Map(roles.map((r) => [r._id, r.roleName]));
     const jobTitle = new Map(jobs.map((j) => [j._id, j.title]));
     const agentName = new Map(agents.map((a) => [a._id, a.name]));
@@ -34,6 +37,10 @@ export const snapshot = query({
         supervisorName: a.supervisorId ? (agentName.get(a.supervisorId) ?? null) : null,
         sprite: a.sprite ?? null,
         hiredAt: a._creationTime,
+        skills: holds
+          .filter((h) => h.agentId === a._id)
+          .map((h) => ({ skillId: h.skillId, name: skillName.get(h.skillId) ?? "?", level: h.level, uses: h.uses }))
+          .sort((x, y) => y.level - x.level || x.name.localeCompare(y.name)),
       })),
       roles: roles
         .map((r) => ({

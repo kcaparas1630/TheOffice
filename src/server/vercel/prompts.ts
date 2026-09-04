@@ -11,7 +11,11 @@ export interface AgentProfile {
     traits: string[];
     notes: string;
   };
+  // Skills on record, with a 1–5 level. Absent = none known.
+  skills?: { name: string; level: number }[];
 }
+
+const SKILL_LEVEL_WORDS = ["", "learning", "working", "solid", "strong", "expert"];
 
 export interface WorkState {
   status: "idle" | "working";
@@ -46,6 +50,14 @@ export function buildSystemPrompt(profile: AgentProfile): string {
   ];
   if (profile.personality.notes.trim()) {
     lines.push(profile.personality.notes.trim());
+  }
+  if (profile.skills && profile.skills.length > 0) {
+    lines.push(``, `## Your skills (on record)`);
+    for (const s of profile.skills) {
+      const word = SKILL_LEVEL_WORDS[Math.min(5, Math.max(1, Math.round(s.level)))];
+      lines.push(`- ${s.name} — level ${Math.round(s.level)}/5 (${word})`);
+    }
+    lines.push(`Claim only these skills. Let the level set how confident and detailed you are with each.`);
   }
   lines.push(
     ``,

@@ -3,6 +3,7 @@
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { settleAgentStatus } from "./model/runs";
+import { bumpSkillUses } from "./model/skills";
 
 export const startRun = internalMutation({
   args: {
@@ -37,12 +38,16 @@ export const finishRun = internalMutation({
     runId: v.id("runs"),
     artifactId: v.id("artifacts"),
     costUsd: v.optional(v.number()),
+    // Skills whose tools the run invoked (from the model's step list, never prose).
+    skillIds: v.optional(v.array(v.id("skills"))),
   },
-  handler: async (ctx, { runId, artifactId, costUsd }) => {
+  handler: async (ctx, { runId, artifactId, costUsd, skillIds }) => {
     const run = await ctx.db.get(runId);
     if (!run) return;
-    await ctx.db.patch(runId, { status: "done", finishedAt: Date.now(), artifactId, costUsd });
+    await ctx.db.patch(runId, { status: "done", finishedAt: Date.now(), artifactId, costUsd, skillIds });
     await settleAgentStatus(ctx, run.agentId);
+    const promoted = skillIds?.length ? await bumpSkillUses(ctx, run.agentId, skillIds) : [];
+    return { promoted };
   },
 });
 
