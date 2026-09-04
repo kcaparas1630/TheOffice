@@ -8,4 +8,7 @@ const crons = cronJobs();
 // DST drift accepted.
 crons.daily("daily jobs", { hourUTC: 15, minuteUTC: 0 }, internal.briefs.runScheduledJobs, {});
 
+// Close out runs whose process died before it could report back.
+crons.interval("reap stale runs", { minutes: 15 }, internal.runs.reapStaleRuns, {});
+
 export default crons;

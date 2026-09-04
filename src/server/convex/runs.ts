@@ -62,6 +62,34 @@ export const failRun = internalMutation({
   },
 });
 
+// A run only ends through finishRun/failRun, which the action itself calls.
+// If the process dies first (backend restart, the action time limit, a hung
+// fetch) the row stays "running" and its agent stays "working" forever. The
+// reaper cron closes those out as failures so the record — and the office —
+// stops lying. Anything alive this long is dead; real runs finish in minutes.
+export const STALE_RUN_MS = 15 * 60_000;
+
+export const reapStaleRuns = internalMutation({
+  args: { olderThanMs: v.optional(v.number()) },
+  returns: v.number(),
+  handler: async (ctx, { olderThanMs }) => {
+    const cutoff = Date.now() - (olderThanMs ?? STALE_RUN_MS);
+    const stale = await ctx.db
+      .query("runs")
+      .filter((q) => q.and(q.eq(q.field("status"), "running"), q.lt(q.field("startedAt"), cutoff)))
+      .collect();
+    for (const run of stale) {
+      await ctx.db.patch(run._id, {
+        status: "failed",
+        finishedAt: Date.now(),
+        error: "Timed out: the run never reported back (process ended mid-run).",
+      });
+      await settleAgentStatus(ctx, run.agentId);
+    }
+    return stale.length;
+  },
+});
+
 export const saveArtifact = internalMutation({
   args: {
     agentId: v.id("agents"),

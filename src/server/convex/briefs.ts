@@ -30,6 +30,11 @@ const WINDOW_HOURS = 24;
 const FALLBACK_WINDOW_HOURS = 48;
 const MAX_CANDIDATES = 40;
 
+// One slow source must not stall the whole brief (or push the action into
+// its time limit, which leaves the run stranded).
+const FETCH_TIMEOUT_MS = 20_000;
+const fetchWithTimeout = (url: string) => fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+
 async function fetchCandidates(now: number, feeds: FeedSource[]): Promise<CandidateItem[]> {
   const sinceSec = Math.floor((now - FALLBACK_WINDOW_HOURS * 3_600_000) / 1000);
   const hnParams = new URLSearchParams({
@@ -38,11 +43,11 @@ async function fetchCandidates(now: number, feeds: FeedSource[]): Promise<Candid
     numericFilters: `points>${HN_MIN_POINTS},created_at_i>${sinceSec}`,
   });
   const sources: Promise<CandidateItem[]>[] = [
-    fetch(`https://hn.algolia.com/api/v1/search_by_date?${hnParams}`)
+    fetchWithTimeout(`https://hn.algolia.com/api/v1/search_by_date?${hnParams}`)
       .then((r) => r.json())
       .then((json) => parseHnHits(json)),
     ...feeds.map((feed) =>
-      fetch(feed.url)
+      fetchWithTimeout(feed.url)
         .then((r) => r.text())
         .then((xml) => parseFeedXml(xml, feed.name))
     ),
